@@ -26,7 +26,10 @@ in the interface does not change the hardware.
 
 The first version is in development. macOS is the primary platform;
 Windows and Linux are checked by CI but still need hands-on validation.
-There is no signed public installer yet. See
+The first macOS download targets Apple Silicon and is not signed with
+Developer ID or notarized. See [installation notes](docs/install-macos.md).
+Release downloads will appear on [GitHub Releases](https://github.com/xingrz/usbloom/releases)
+when the first version is published. See
 [Contributing](CONTRIBUTING.md#run-and-check) to run a local build.
 
 Select a device on the left, then explore **Interfaces**, **Device details**,

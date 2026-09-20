@@ -77,3 +77,6 @@ targets whose runtime support must be reported honestly.
 - Keep dependencies locked, CI permissions minimal, and downloaded
   executables pinned and checksum verified. Never commit credentials.
 - Keep public-facing release and support claims consistent with evidence.
+- Release tags must match Cargo's version. Build macOS distribution assets
+  from the accompanying vendored source archive and stop at a draft release.
+  See docs/releasing.md; Developer ID signing and notarization are deferred.

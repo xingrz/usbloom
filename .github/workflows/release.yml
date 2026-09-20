@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag (for example v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ inputs.tag || github.ref_name }}
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.95.0
+      - name: Verify tag and assemble corresponding source
+        run: |
+          python3 scripts/release.py check-tag --tag "$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          python3 scripts/release.py source --tag "$RELEASE_TAG"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-source
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+  macos:
+    needs: source
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      CARGO_NET_OFFLINE: 'true'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-source
+          path: release
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.95.0
+      - name: Build from the distributed source archive offline
+        shell: bash
+        run: |
+          mkdir source
+          tar -xzf "release/USBloom-${RELEASE_TAG#v}-source.tar.gz" -C source --strip-components=1
+          cd source
+          cargo build --release --frozen
+          python3 scripts/release.py bundle --binary target/release/usbloom \
+            --notices ../release/THIRD_PARTY_NOTICES.txt
+          python3 scripts/release.py package --tag "$RELEASE_TAG" --output ../release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-macos
+          path: release/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+  draft:
+    needs: [checks, source, macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist/release
+      - name: Verify assets and prepare a draft
+        shell: bash
+        run: |
+          test -s "dist/release/USBloom-${RELEASE_TAG#v}-macos-arm64.dmg"
+          test -s "dist/release/USBloom-${RELEASE_TAG#v}-source.tar.gz"
+          test "$(cat dist/release/SOURCE_REVISION)" = "$(git rev-parse HEAD)"
+          python3 scripts/release.py checksums
+          if gh release view "$RELEASE_TAG" --json isDraft > /tmp/release.json; then
+            python3 -c 'import json; assert json.load(open("/tmp/release.json"))["isDraft"], "Published releases must not be overwritten"'
+            gh release edit "$RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"
+            gh release upload "$RELEASE_TAG" dist/release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/release/* --draft --verify-tag \
+              --title "USBloom $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"
+          fi

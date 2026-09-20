@@ -8,3 +8,4 @@
 .env
 .env.*
 /assets/*.iconset/
+__pycache__/

@@ -60,9 +60,11 @@ Before publishing binaries, audit bundled dependency and font notices,
 include the GPL license, and provide the exact corresponding source,
 lockfile, build scripts, and patched dependency sources. A reproducible
 source bundle can include `cargo vendor --locked` output and the Cargo
-source replacement configuration. Sign and notarize macOS public builds
-with the release owner's identity. Do not label development bundles as
-notarized releases.
+source replacement configuration. The first macOS release uses an ad-hoc
+signature without notarization; state that clearly in installation
+instructions. Developer ID signing and notarization are deferred. See
+[the release guide](docs/releasing.md) for the automated draft-release
+pipeline and review steps.
 
 Use English Conventional Commits with a short subject and a short body
 explaining why. Wrap each line at 75 characters. Fix nearby unpublished
