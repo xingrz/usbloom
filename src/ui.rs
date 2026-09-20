@@ -1,10 +1,15 @@
+mod raw_data;
+mod values;
+use raw_data::RawData;
+use values::Values;
+
 use cyme::usb::{Configuration, Interface};
 use gpui_kit::{
     assets::IconName,
     component::{
         ActiveTheme, Disableable, Icon, InteractiveElementExt, Selectable, Sizable, TitleBar,
         button::*,
-        input::{Input, InputEvent, InputState},
+        input::{Copy, Input, InputEvent, InputState},
         tooltip::Tooltip,
     },
     prelude::*,
@@ -21,12 +26,6 @@ use usbloom::inventory::{self, DeviceRow, Snapshot};
 gpui_kit::actions!(usbloom, [Quit, Refresh, Find, OpenSnapshot, SaveSnapshot]);
 pub const TITLEBAR_HEIGHT: Pixels = px(64.);
 
-const INK: u32 = 0x23332f;
-const MUTED: u32 = 0x77857f;
-const LINE: u32 = 0xe5eae7;
-const ACCENT: u32 = 0x297f68;
-const TINT: u32 = 0xe5f1eb;
-
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Interfaces,
@@ -42,6 +41,7 @@ pub struct Explorer {
     config: Option<u8>,
     alternatives: HashMap<(u8, u8), u8>,
     tab: Tab,
+    raw_text: Option<SharedString>,
     search: Entity<InputState>,
     focus: FocusHandle,
     detail_scroll: ScrollHandle,
@@ -92,6 +92,7 @@ impl Explorer {
             config: None,
             alternatives: HashMap::new(),
             tab: Tab::Interfaces,
+            raw_text: None,
             search,
             focus: cx.focus_handle(),
             detail_scroll: ScrollHandle::new(),
@@ -111,6 +112,7 @@ impl Explorer {
     }
 
     fn apply_snapshot(&mut self, snapshot: Snapshot) {
+        self.raw_text = None;
         self.rows = snapshot.rows();
         // Preserve a disconnected selection instead of jumping to another device.
         if self.selected.is_none() {
@@ -178,6 +180,7 @@ impl Explorer {
     fn select(&mut self, key: String, cx: &mut Context<Self>) {
         if self.selected.as_ref() != Some(&key) {
             self.selected = Some(key);
+            self.raw_text = None;
             self.config = None;
             self.alternatives.clear();
             self.detail_scroll.set_offset(point(px(0.), px(0.)));
@@ -289,8 +292,8 @@ impl Explorer {
             .pl(px(if cfg!(target_os = "macos") { 96. } else { 20. }))
             .pr(px(24.))
             .border_b_1()
-            .border_color(rgb(LINE))
-            .bg(rgb(0xffffff))
+            .border_color(cx.theme().border)
+            .bg(cx.theme().background)
             .child(
                 div()
                     .flex()
@@ -300,14 +303,14 @@ impl Explorer {
                         div()
                             .size(px(28.))
                             .rounded(px(9.))
-                            .bg(rgb(ACCENT))
+                            .bg(cx.theme().accent_foreground)
                             .flex()
                             .items_center()
                             .justify_center()
                             .child(
                                 Icon::new(IconName::Usb)
                                     .size(px(20.))
-                                    .text_color(rgb(0xffffff)),
+                                    .text_color(cx.theme().background),
                             ),
                     )
                     .child(
@@ -403,7 +406,7 @@ impl Explorer {
                         .flex()
                         .items_center()
                         .gap(px(8.))
-                        .text_color(rgb(MUTED))
+                        .text_color(cx.theme().muted_foreground)
                         .text_xs()
                         .child(Icon::new(IconName::Monitor).size(px(13.)))
                         .child(format!("USB BUS {}", row.device.location_id.bus)),
@@ -421,100 +424,118 @@ impl Explorer {
             } else {
                 d.name.clone()
             };
-            tree = tree.child(
-                div()
-                    .id(SharedString::from(format!("row-{}", row.key)))
-                    .role(Role::Button)
-                    .aria_label(format!("{name}, {}", inventory::ids(d)))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .h(px(58.))
-                    .px(px(10.))
-                    .ml(px(indent))
-                    .mb(px(3.))
-                    .rounded(px(9.))
-                    .cursor_pointer()
-                    .bg(rgb(if selected { TINT } else { 0xf4f6f5 }))
-                    .hover(|style| style.bg(rgb(if selected { TINT } else { 0xecefec })))
-                    .on_click(cx.listener(move |this, _, _, cx| this.select(key.clone(), cx)))
-                    .child(if row.has_children {
-                        Button::new(SharedString::from(format!("toggle-{}", row.key)))
-                            .ghost()
-                            .small()
-                            .icon(if expanded {
-                                IconName::ChevronDown
-                            } else {
-                                IconName::ChevronRight
-                            })
-                            .tooltip(if expanded {
-                                "Collapse hub"
-                            } else {
-                                "Expand hub"
-                            })
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                if !this.collapsed.remove(&toggle_key) {
-                                    this.collapsed.insert(toggle_key.clone());
-                                }
-                                cx.notify();
-                            }))
-                            .into_any_element()
-                    } else {
-                        div().w(px(8.)).into_any_element()
-                    })
-                    .child(
-                        Icon::new(if d.base_class_code() == Some(9) {
-                            IconName::Network
+            tree =
+                tree.child(
+                    div()
+                        .id(SharedString::from(format!("row-{}", row.key)))
+                        .role(Role::Button)
+                        .aria_label(format!("{name}, {}", inventory::ids(d)))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .h(px(58.))
+                        .px(px(10.))
+                        .ml(px(indent))
+                        .mb(px(3.))
+                        .rounded(px(9.))
+                        .cursor_pointer()
+                        .bg(if selected {
+                            cx.theme().accent
                         } else {
-                            IconName::Usb
+                            cx.theme().sidebar
                         })
-                        .size(px(18.))
-                        .text_color(rgb(if selected {
-                            ACCENT
-                        } else {
-                            MUTED
-                        })),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap(px(4.))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(if selected {
-                                        FontWeight::SEMIBOLD
+                        .hover(|style| {
+                            style.bg(if selected {
+                                cx.theme().accent
+                            } else {
+                                cx.theme().secondary_hover
+                            })
+                        })
+                        .on_click(cx.listener(move |this, _, _, cx| this.select(key.clone(), cx)))
+                        .child(div().w(px(24.)).h(px(24.)).flex_shrink_0().child(
+                            if row.has_children {
+                                Button::new(SharedString::from(format!("toggle-{}", row.key)))
+                                    .ghost()
+                                    .small()
+                                    .size(px(24.))
+                                    .icon(if expanded {
+                                        IconName::ChevronDown
                                     } else {
-                                        FontWeight::MEDIUM
+                                        IconName::ChevronRight
                                     })
-                                    .truncate()
-                                    .child(name),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(rgb(MUTED))
-                                    .truncate()
-                                    .font_family(cx.theme().mono_font_family.clone())
-                                    .child(inventory::ids(d)),
-                            ),
-                    ),
-            );
+                                    .tooltip(if expanded {
+                                        "Collapse hub"
+                                    } else {
+                                        "Expand hub"
+                                    })
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        if !this.collapsed.remove(&toggle_key) {
+                                            this.collapsed.insert(toggle_key.clone());
+                                        }
+                                        cx.notify();
+                                    }))
+                                    .into_any_element()
+                            } else {
+                                div().into_any_element()
+                            },
+                        ))
+                        .child(
+                            Icon::new(if d.base_class_code() == Some(9) {
+                                IconName::Network
+                            } else {
+                                IconName::Usb
+                            })
+                            .size(px(18.))
+                            .text_color(if selected {
+                                cx.theme().accent_foreground
+                            } else {
+                                cx.theme().muted_foreground
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .gap(px(4.))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_weight(if selected {
+                                            FontWeight::SEMIBOLD
+                                        } else {
+                                            FontWeight::MEDIUM
+                                        })
+                                        .truncate()
+                                        .child(name),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .truncate()
+                                        .font_family(cx.theme().mono_font_family.clone())
+                                        .child(inventory::ids(d)),
+                                ),
+                        ),
+                );
         }
         if visible.is_empty() {
-            tree = tree.child(div().p(px(20.)).text_sm().text_color(rgb(MUTED)).child(
-                if self.scanning && self.snapshot.is_none() {
-                    "Reading devices…"
-                } else if query.is_empty() {
-                    "No connected devices"
-                } else {
-                    "No matching devices"
-                },
-            ));
+            tree = tree.child(
+                div()
+                    .p(px(20.))
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(if self.scanning && self.snapshot.is_none() {
+                        "Reading devices…"
+                    } else if query.is_empty() {
+                        "No connected devices"
+                    } else {
+                        "No matching devices"
+                    }),
+            );
         }
         div()
             .w(px(324.))
@@ -522,9 +543,9 @@ impl Explorer {
             .h_full()
             .flex()
             .flex_col()
-            .bg(rgb(0xf4f6f5))
+            .bg(cx.theme().sidebar)
             .border_r_1()
-            .border_color(rgb(LINE))
+            .border_color(cx.theme().border)
             .child(
                 div().p(px(20.)).pb(px(8.)).child(
                     Input::new(&self.search)
@@ -536,7 +557,7 @@ impl Explorer {
             .child(tree)
     }
 
-    fn detail(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn detail(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let Some(row) = self
             .rows
             .iter()
@@ -552,7 +573,7 @@ impl Explorer {
                 .child(
                     Icon::new(IconName::Usb)
                         .size(px(40.))
-                        .text_color(rgb(ACCENT)),
+                        .text_color(cx.theme().accent_foreground),
                 )
                 .child(div().text_xl().child(if self.selected.is_some() {
                     "Device disconnected"
@@ -562,7 +583,7 @@ impl Explorer {
                 .child(
                     div()
                         .text_sm()
-                        .text_color(rgb(MUTED))
+                        .text_color(cx.theme().muted_foreground)
                         .child(if self.selected.is_some() {
                             "Reconnect it, or select another device."
                         } else {
@@ -572,9 +593,8 @@ impl Explorer {
                 .into_any_element();
         };
         let d = &row.device;
+        let values = Values::default();
         let key = row.key.clone();
-        let raw = serde_json::to_string_pretty(d).unwrap_or_default();
-        let raw_copy = raw.clone();
         let configs = d
             .extra
             .as_ref()
@@ -589,8 +609,9 @@ impl Explorer {
             .id("details-scroll")
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
-            .track_scroll(&self.detail_scroll)
+            .when(self.tab != Tab::Raw, |view| {
+                view.overflow_y_scroll().track_scroll(&self.detail_scroll)
+            })
             .p(px(30.))
             .flex()
             .flex_col()
@@ -606,11 +627,11 @@ impl Explorer {
                         .items_center()
                         .gap(px(8.))
                         .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child(row.bus.clone())
+                        .text_color(cx.theme().muted_foreground)
+                        .child(values.text(row.bus.clone()))
                         .child("/")
                         .child("Port")
-                        .child(code(d.port_path().to_string(), cx)),
+                        .child(values.code(d.port_path().to_string(), cx)),
                 )
                 .child(
                     div()
@@ -624,14 +645,14 @@ impl Explorer {
                                 .min_w_0()
                                 .text_2xl()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .child(d.name.clone()),
+                                .child(values.text(d.name.clone())),
                         )
                         .child(
                             div()
                                 .size(px(48.))
                                 .flex_shrink_0()
                                 .rounded(px(14.))
-                                .bg(rgb(TINT))
+                                .bg(cx.theme().accent)
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -642,16 +663,21 @@ impl Explorer {
                                         IconName::Usb
                                     })
                                     .size(px(25.))
-                                    .text_color(rgb(ACCENT)),
+                                    .text_color(cx.theme().accent_foreground),
                                 ),
                         ),
                 )
                 .child(
-                    div().text_sm().text_color(rgb(MUTED)).child(
-                        d.manufacturer
-                            .clone()
-                            .unwrap_or_else(|| "Manufacturer unavailable".into()),
-                    ),
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(
+                            values.text(
+                                d.manufacturer
+                                    .clone()
+                                    .unwrap_or_else(|| "Manufacturer unavailable".into()),
+                            ),
+                        ),
                 ),
         );
         content = content.child(
@@ -659,8 +685,8 @@ impl Explorer {
                 .flex()
                 .gap(px(8.))
                 .flex_wrap()
-                .child(pill(inventory::device_class(d)))
-                .child(pill(inventory::speed(d))),
+                .child(values.pill(inventory::device_class(d), cx))
+                .child(values.pill(inventory::speed(d), cx)),
         );
         if let Some(error) = self
             .snapshot
@@ -671,8 +697,8 @@ impl Explorer {
                 div()
                     .p(px(12.))
                     .rounded(px(8.))
-                    .bg(rgb(0xfff3dc))
-                    .text_color(rgb(0x87682c))
+                    .bg(cx.theme().warning)
+                    .text_color(cx.theme().warning_foreground)
                     .text_sm()
                     .child(format!("Some descriptors could not be read. {error}")),
             );
@@ -683,15 +709,17 @@ impl Explorer {
                 .gap(px(28.))
                 .pb(px(20.))
                 .border_b_1()
-                .border_color(rgb(LINE))
-                .child(metric("VENDOR ID", inventory::hex16(d.vendor_id), cx))
-                .child(metric("PRODUCT ID", inventory::hex16(d.product_id), cx))
-                .child(metric(
-                    "USB VERSION",
-                    d.bcd_usb
-                        .map_or_else(|| "Unavailable".into(), |v| v.to_string()),
-                    cx,
-                )),
+                .border_color(cx.theme().border)
+                .child(values.metric("VENDOR ID", inventory::hex16(d.vendor_id), cx))
+                .child(values.metric("PRODUCT ID", inventory::hex16(d.product_id), cx))
+                .child(
+                    values.metric(
+                        "USB VERSION",
+                        d.bcd_usb
+                            .map_or_else(|| "Unavailable".into(), |v| v.to_string()),
+                        cx,
+                    ),
+                ),
         );
         let mut tabs = div().flex().gap(px(6.)).items_center();
         for (tab, label) in [
@@ -724,7 +752,7 @@ impl Explorer {
                                 div()
                                     .text_sm()
                                     .font_weight(FontWeight::MEDIUM)
-                                    .child(format!("Configuration {number}")),
+                                    .child(values.text(format!("Configuration {number}"))),
                             );
                             continue;
                         }
@@ -741,11 +769,14 @@ impl Explorer {
                         );
                     }
                     config_header = config_header.child(choices).child(
-                        div().text_xs().text_color(rgb(MUTED)).child(format!(
-                            "{} max · {}",
-                            config.max_power,
-                            if config.active { "Active" } else { "Inactive" }
-                        )),
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(values.text(format!(
+                                "{} max · {}",
+                                config.max_power,
+                                if config.active { "Active" } else { "Inactive" }
+                            ))),
                     );
                     content = content.child(config_header);
                     for (number, variants) in inventory::interfaces(config) {
@@ -761,15 +792,18 @@ impl Explorer {
                             &variants,
                             interface,
                             d.extra.as_ref().and_then(|e| e.negotiated_speed.as_ref()),
+                            &values,
                             cx,
                         ));
                     }
                     if config.interfaces.is_empty() {
-                        content = content.child(empty("No interface descriptors were returned."));
+                        content =
+                            content.child(empty("No interface descriptors were returned.", cx));
                     }
                 } else {
                     content = content.child(empty(
                         "Configuration descriptors are unavailable for this device.",
+                        cx,
                     ));
                 }
             }
@@ -809,43 +843,36 @@ impl Explorer {
                 ];
                 let mut list = div().flex_shrink_0().flex().flex_col();
                 for (label, value) in fields {
-                    list = list.child(field(label, value, cx));
+                    list = list.child(values.field(label, value, cx));
                 }
                 content = content.child(list);
             }
             Tab::Raw => {
-                content = content.child(
-                    div().flex().items_center().justify_end().child(
-                        Button::new("copy-raw")
-                            .ghost()
-                            .small()
-                            .icon(IconName::Copy)
-                            .label("Copy JSON")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(raw_copy.clone()));
-                                this.show_notice("JSON copied", cx);
-                                cx.notify();
-                            })),
-                    ),
-                );
-                content = content.child(
-                    div()
-                        .p(px(16.))
-                        .bg(rgb(0xf4f6f5))
-                        .rounded(px(10.))
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .text_xs()
-                        .children(raw.lines().map(|line| div().child(line.to_owned()))),
-                );
+                let raw = self
+                    .raw_text
+                    .get_or_insert_with(|| {
+                        serde_json::to_string_pretty(d).unwrap_or_default().into()
+                    })
+                    .clone();
+                content = content.child(RawData(raw));
             }
         }
         div()
+            .id(SharedString::from(format!("detail-{}", row.key)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    if this.tab != Tab::Raw {
+                        this.focus.focus(window, cx);
+                    }
+                }),
+            )
             .flex_1()
             .min_w_0()
             .h_full()
             .flex()
             .flex_col()
-            .bg(rgb(0xffffff))
+            .bg(cx.theme().background)
             .child(content)
             .into_any_element()
     }
@@ -856,6 +883,7 @@ impl Explorer {
         variants: &[&Interface],
         interface: &Interface,
         speed: Option<&cyme::usb::Speed>,
+        values: &Values,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let config_number = config.number;
@@ -867,8 +895,8 @@ impl Explorer {
                 alternatives = alternatives.child(
                     div()
                         .text_xs()
-                        .text_color(rgb(MUTED))
-                        .child(format!("Alt {alt}")),
+                        .text_color(cx.theme().muted_foreground)
+                        .child(values.text(format!("Alt {alt}"))),
                 );
                 continue;
             }
@@ -888,9 +916,13 @@ impl Explorer {
             );
         }
         let mut card = div()
+            .id(SharedString::from(format!(
+                "interface-{config_number}-{number}-{}",
+                interface.alt_setting
+            )))
             .flex_shrink_0()
             .border_1()
-            .border_color(rgb(LINE))
+            .border_color(cx.theme().border)
             .rounded(px(12.))
             .overflow_hidden()
             .child(
@@ -909,14 +941,14 @@ impl Explorer {
                                 div()
                                     .size(px(30.))
                                     .rounded(px(9.))
-                                    .bg(rgb(0xf1f4f2))
+                                    .bg(cx.theme().muted)
                                     .flex()
                                     .items_center()
                                     .justify_center()
                                     .text_sm()
-                                    .text_color(rgb(ACCENT))
+                                    .text_color(cx.theme().accent_foreground)
                                     .font_family(cx.theme().mono_font_family.clone())
-                                    .child(format!("{number:02}")),
+                                    .child(values.text(format!("{number:02}"))),
                             )
                             .child(
                                 div()
@@ -925,18 +957,27 @@ impl Explorer {
                                     .gap(px(3.))
                                     .child(
                                         div().text_sm().font_weight(FontWeight::SEMIBOLD).child(
-                                            interface
-                                                .sub_class_name()
-                                                .filter(|_| interface.sub_class != 0)
-                                                .or(interface.class_name())
-                                                .unwrap_or("Vendor specific")
-                                                .to_string(),
+                                            values.text(
+                                                interface
+                                                    .sub_class_name()
+                                                    .filter(|_| interface.sub_class != 0)
+                                                    .or(interface.class_name())
+                                                    .unwrap_or("Vendor specific")
+                                                    .to_string(),
+                                            ),
                                         ),
                                     )
-                                    .child(div().text_xs().text_color(rgb(MUTED)).child(format!(
-                                        "Interface {number} · {}",
-                                        interface.class_name().unwrap_or("Unassigned class")
-                                    ))),
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(values.text(format!(
+                                                "Interface {number} · {}",
+                                                interface
+                                                    .class_name()
+                                                    .unwrap_or("Unassigned class")
+                                            ))),
+                                    ),
                             ),
                     )
                     .child(alternatives),
@@ -950,14 +991,14 @@ impl Explorer {
                     .gap(px(20.))
                     .flex_wrap()
                     .text_xs()
-                    .text_color(rgb(MUTED))
+                    .text_color(cx.theme().muted_foreground)
                     .child(
                         div()
                             .flex()
                             .items_baseline()
                             .gap(px(4.))
                             .child("Class")
-                            .child(code(format!("0x{:02X}", u8::from(interface.class)), cx)),
+                            .child(values.code(format!("0x{:02X}", u8::from(interface.class)), cx)),
                     )
                     .child(
                         div()
@@ -965,7 +1006,7 @@ impl Explorer {
                             .items_baseline()
                             .gap(px(4.))
                             .child("Subclass")
-                            .child(code(format!("0x{:02X}", interface.sub_class), cx)),
+                            .child(values.code(format!("0x{:02X}", interface.sub_class), cx)),
                     )
                     .child(
                         div()
@@ -974,7 +1015,7 @@ impl Explorer {
                             .flex_wrap()
                             .gap(px(4.))
                             .child("Protocol")
-                            .child(decoded_value(
+                            .child(values.decoded_value(
                                 inventory::decoded(
                                     Some(interface.protocol),
                                     interface.protocol_name(),
@@ -1016,7 +1057,7 @@ impl Explorer {
                     .px(px(16.))
                     .py(px(12.))
                     .border_t_1()
-                    .border_color(rgb(LINE))
+                    .border_color(cx.theme().border)
                     .flex()
                     .items_center()
                     .gap(px(14.))
@@ -1027,7 +1068,7 @@ impl Explorer {
                             IconName::ArrowUpRight
                         })
                         .size(px(17.))
-                        .text_color(rgb(ACCENT)),
+                        .text_color(cx.theme().accent_foreground),
                     )
                     .child(
                         div()
@@ -1036,11 +1077,11 @@ impl Explorer {
                             .font_family(cx.theme().mono_font_family.clone())
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
-                            .child(format!(
+                            .child(values.text(format!(
                                 "EP {} {}",
                                 endpoint.address.number,
                                 if input { "IN" } else { "OUT" }
-                            )),
+                            ))),
                     )
                     .child(
                         div()
@@ -1048,26 +1089,30 @@ impl Explorer {
                             .flex_shrink_0()
                             .font_family(cx.theme().mono_font_family.clone())
                             .text_xs()
-                            .text_color(rgb(MUTED))
-                            .child(format!("0x{:02X}", endpoint.address.address)),
+                            .text_color(cx.theme().muted_foreground)
+                            .child(values.text(format!("0x{:02X}", endpoint.address.address))),
                     )
                     .child(
                         div()
                             .flex_1()
                             .text_sm()
-                            .child(endpoint.transfer_type.to_string()),
+                            .child(values.text(endpoint.transfer_type.to_string())),
                     )
-                    .child(code(format!("{} B", endpoint.max_packet_size()), cx).text_sm())
+                    .child(
+                        values
+                            .code(format!("{} B", endpoint.max_packet_size()), cx)
+                            .text_sm(),
+                    )
                     .child(
                         div()
                             .w(px(88.))
                             .text_right()
                             .text_xs()
-                            .text_color(rgb(MUTED))
+                            .text_color(cx.theme().muted_foreground)
                             .when(timing.starts_with(|c: char| c.is_ascii_digit()), |view| {
                                 view.font_family(cx.theme().mono_font_family.clone())
                             })
-                            .child(timing),
+                            .child(values.text(timing)),
                     ),
             );
         }
@@ -1077,7 +1122,7 @@ impl Explorer {
                     .px(px(16.))
                     .pb(px(16.))
                     .text_sm()
-                    .text_color(rgb(MUTED))
+                    .text_color(cx.theme().muted_foreground)
                     .child("No endpoints"),
             );
         }
@@ -1092,10 +1137,21 @@ impl Render for Explorer {
             .relative()
             .flex()
             .flex_col()
-            .bg(rgb(0xffffff))
-            .text_color(rgb(INK))
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
             .text_sm()
             .track_focus(&self.focus)
+            .on_action(cx.listener(|_, action: &values::CopyValue, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(action.text.clone()));
+            }))
+            .on_action(cx.listener(|_, _: &Copy, window, cx| {
+                let text = gpui_kit::base::TextSelection::selected_text(window, cx);
+                if text.is_empty() {
+                    cx.propagate();
+                } else {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text));
+                }
+            }))
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh(cx)))
             .on_action(cx.listener(|this, _: &Find, window, cx| {
                 this.search.update(cx, |input, cx| input.focus(window, cx))
@@ -1107,8 +1163,8 @@ impl Render for Explorer {
                 view.child(
                     div()
                         .p(px(10.))
-                        .bg(rgb(0xfff1dc))
-                        .text_color(rgb(0x875d24))
+                        .bg(cx.theme().warning)
+                        .text_color(cx.theme().warning_foreground)
                         .child(error),
                 )
             })
@@ -1117,8 +1173,8 @@ impl Render for Explorer {
                     div()
                         .px(px(24.))
                         .py(px(8.))
-                        .bg(rgb(TINT))
-                        .text_color(rgb(ACCENT))
+                        .bg(cx.theme().accent)
+                        .text_color(cx.theme().accent_foreground)
                         .child(format!("Snapshot · {source}")),
                 )
             })
@@ -1142,8 +1198,8 @@ impl Render for Explorer {
                         .px(px(14.))
                         .py(px(10.))
                         .rounded(px(8.))
-                        .bg(rgb(INK))
-                        .text_color(rgb(0xffffff))
+                        .bg(cx.theme().foreground)
+                        .text_color(cx.theme().background)
                         .shadow_sm()
                         .text_sm()
                         .child(self.notice.clone()),
@@ -1152,95 +1208,11 @@ impl Render for Explorer {
     }
 }
 
-fn pill(value: String) -> impl IntoElement {
-    div()
-        .px(px(10.))
-        .py(px(5.))
-        .rounded(px(6.))
-        .bg(rgb(0xf1f5f2))
-        .text_color(rgb(0x577064))
-        .text_xs()
-        .child(value)
-}
-fn code(value: impl Into<SharedString>, cx: &App) -> Div {
-    div()
-        .font_family(cx.theme().mono_font_family.clone())
-        .child(value.into())
-}
-
-fn decoded_value(value: String, cx: &App) -> Div {
-    match value.rsplit_once(" · ") {
-        Some((name, raw)) if raw.starts_with("0x") => div()
-            .flex()
-            .items_baseline()
-            .flex_wrap()
-            .gap(px(4.))
-            .child(name.to_owned())
-            .child("·")
-            .child(code(raw.to_owned(), cx)),
-        _ => div().child(value),
-    }
-}
-
-fn metric(label: &'static str, value: String, cx: &App) -> impl IntoElement {
-    div()
-        .flex_1()
-        .flex()
-        .flex_col()
-        .gap(px(7.))
-        .child(div().text_xs().text_color(rgb(MUTED)).child(label))
-        .child(code(value, cx).text_lg().font_weight(FontWeight::MEDIUM))
-}
-fn field(label: &'static str, value: String, cx: &Context<Explorer>) -> impl IntoElement {
-    let copy = value.clone();
-    div()
-        .py(px(13.))
-        .border_b_1()
-        .border_color(rgb(LINE))
-        .flex()
-        .gap(px(16.))
-        .child(
-            div()
-                .w(px(165.))
-                .flex_shrink_0()
-                .text_color(rgb(MUTED))
-                .child(label),
-        )
-        .child(div().flex_1().min_w_0().child(
-            if matches!(
-                label,
-                "Serial number"
-                    | "Device release"
-                    | "Port path"
-                    | "Device address"
-                    | "Negotiated speed"
-                    | "Control packet size"
-            ) && value != "Unavailable"
-            {
-                code(value, cx)
-            } else {
-                decoded_value(value, cx)
-            },
-        ))
-        .child(
-            Button::new(label)
-                .ghost()
-                .small()
-                .icon(IconName::Copy)
-                .accessibility_label(format!("Copy {label}"))
-                .tooltip(format!("Copy {label}"))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
-                    this.show_notice(format!("{label} copied"), cx);
-                    cx.notify();
-                })),
-        )
-}
-fn empty(message: &'static str) -> impl IntoElement {
+fn empty(message: &'static str, cx: &App) -> impl IntoElement {
     div()
         .p(px(22.))
         .rounded(px(10.))
-        .bg(rgb(0xf6f8f6))
-        .text_color(rgb(MUTED))
+        .bg(cx.theme().muted)
+        .text_color(cx.theme().muted_foreground)
         .child(message)
 }

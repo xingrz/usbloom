@@ -1,6 +1,7 @@
+mod appearance;
 mod ui;
 use gpui_kit::{
-    component::{Root, Theme, ThemeMode, TitleBar},
+    component::{Root, TitleBar},
     *,
 };
 use ui::{Explorer, Quit};
@@ -10,7 +11,7 @@ fn main() {
         .with_assets(gpui_kit::assets::AllAssets)
         .run(|cx| {
             gpui_kit::init(cx);
-            Theme::change(ThemeMode::Light, None, cx);
+            appearance::sync(None, cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
             cx.set_menus([Menu::new("USBloom").items([MenuItem::action("Quit USBloom", Quit)])]);
@@ -38,6 +39,12 @@ fn main() {
                         ..TitleBar::window_options()
                     },
                     |window, cx| {
+                        appearance::sync(Some(window), cx);
+                        window
+                            .observe_window_appearance(|window, cx| {
+                                appearance::sync(Some(window), cx);
+                            })
+                            .detach();
                         let view = cx.new(|cx| Explorer::new(window, cx));
                         cx.new(|cx| Root::new(view, window, cx))
                     },

@@ -12,7 +12,7 @@ interfaces, and understand what each endpoint does.
 - Read transfer direction, packet sizes, and service intervals without
   translating every field by hand. Hover over endpoints for context.
 - Keep up with connected devices, or pause live refresh while inspecting.
-- Copy individual device fields or JSON. Save a snapshot and open it later,
+- Select and copy device values or JSON. Save a snapshot and open it later,
   even when the hardware is no longer connected.
 
 USBloom observes devices. Choosing a configuration or alternate setting
@@ -30,6 +30,11 @@ or **Raw data**. Use the pause button beside **Refresh** to stop automatic
 updates while inspecting a device. **Save snapshot** keeps the current
 capture; **Open** browses one offline, and **Connected devices** returns
 to the hardware.
+
+Drag over a value to select text, then copy with **⌘/Ctrl C** or the
+right-click menu. Right-clicking a value without a selection copies that
+value. Field labels stay out of the selection. The interface follows your
+system’s light or dark appearance.
 
 | Shortcut | Action |
 | --- | --- |

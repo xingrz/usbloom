@@ -22,3 +22,12 @@ To update, check whether upstream has fixed both issues. If so, remove the
 override and update the registry dependency. Otherwise rebase the small
 patch onto the chosen upstream tag, pin its full commit, and update
 Cargo.lock. Never depend on a moving branch.
+
+## Text selection
+
+GPUI Kit 0.6.4's plain SelectableText needs an explicit redraw subscription.
+Each mixed-font run must have an independent scoped element identity.
+Long JSON belongs in the bounded read-only Editor viewport; plain-text
+selection projects every character and becomes expensive for long inputs.
+Keep the drag, idle-repaint, mixed-font, and large-buffer tests when updating
+the framework, and repeat the native selection and scrolling checks.

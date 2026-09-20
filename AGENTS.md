@@ -32,6 +32,12 @@ targets whose runtime support must be reported honestly.
 - Render a selector only when there is a choice; a lone value is a label.
 - Use the theme monospace font for addresses, IDs, serial numbers, and raw
   descriptor codes. Keep names, explanations, and field labels proportional.
+- Keep data values selectable and provide a copy context menu. Field labels
+  and navigation controls must remain outside text selection.
+- Use Kit's native menus for text context actions, with its platform fallback
+  where native menus are unavailable.
+- Follow system appearance with coherent light and dark semantic colors.
+- Reserve equal disclosure space for all tree rows at the same depth.
 - Make common tasks discoverable: browse, search, refresh, copy, and save
   or open a snapshot. Explain fields where the explanation is useful.
 - Keep selection, expansion, and scrolling stable across refreshes.
