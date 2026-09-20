@@ -19,8 +19,9 @@ cargo test --locked
 
 On Ubuntu 24.04, install the packages listed in
 [the build workflow](.github/workflows/build.yml). Windows builds require
-the MSVC toolchain and Windows SDK. CI checks all three platforms; only
-macOS has been tested with actual hardware and the graphical interface.
+the MSVC toolchain and Windows SDK. CI checks macOS ARM64 and both x64 and
+ARM64 Windows/Linux targets. See [platform validation](docs/platforms.md)
+for the runtime evidence and remaining gaps.
 
 Create a local macOS bundle with:
 
