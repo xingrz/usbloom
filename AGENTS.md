@@ -26,6 +26,12 @@ targets whose runtime support must be reported honestly.
 - Use English for code, documentation, and the primary interface.
 - Favor a quiet, polished desktop interface with clear visual hierarchy.
   Avoid decorative dashboards, jargon-heavy copy, and redundant labels.
+- Keep normal background operation quiet. Avoid permanent reassurance
+  labels or status bars; show feedback when an action finishes, a problem
+  occurs, or the viewing context changes. Use tooltips for secondary help.
+- Render a selector only when there is a choice; a lone value is a label.
+- Use the theme monospace font for addresses, IDs, serial numbers, and raw
+  descriptor codes. Keep names, explanations, and field labels proportional.
 - Make common tasks discoverable: browse, search, refresh, copy, and save
   or open a snapshot. Explain fields where the explanation is useful.
 - Keep selection, expansion, and scrolling stable across refreshes.

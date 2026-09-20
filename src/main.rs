@@ -1,6 +1,6 @@
 mod ui;
 use gpui_kit::{
-    component::{Root, Theme, ThemeMode},
+    component::{Root, Theme, ThemeMode, TitleBar},
     *,
 };
 use ui::{Explorer, Quit};
@@ -27,11 +27,15 @@ fn main() {
                         window_bounds: Some(WindowBounds::Windowed(bounds)),
                         titlebar: Some(TitlebarOptions {
                             title: Some("USBloom".into()),
-                            ..Default::default()
+                            appears_transparent: true,
+                            traffic_light_position: Some(point(
+                                px(20.),
+                                (ui::TITLEBAR_HEIGHT - px(14.)) / 2.,
+                            )),
                         }),
                         app_id: Some("me.xingrz.usbloom".into()),
                         window_min_size: Some(size(px(960.), px(640.))),
-                        ..Default::default()
+                        ..TitleBar::window_options()
                     },
                     |window, cx| {
                         let view = cx.new(|cx| Explorer::new(window, cx));

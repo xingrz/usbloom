@@ -2,7 +2,7 @@ use cyme::usb::{Configuration, Interface};
 use gpui_kit::{
     assets::IconName,
     component::{
-        Disableable, Icon, Selectable, Sizable,
+        ActiveTheme, Disableable, Icon, InteractiveElementExt, Selectable, Sizable, TitleBar,
         button::*,
         input::{Input, InputEvent, InputState},
         tooltip::Tooltip,
@@ -19,6 +19,8 @@ use std::{
 use usbloom::inventory::{self, DeviceRow, Snapshot};
 
 gpui_kit::actions!(usbloom, [Quit, Refresh, Find, OpenSnapshot, SaveSnapshot]);
+pub const TITLEBAR_HEIGHT: Pixels = px(64.);
+
 const INK: u32 = 0x23332f;
 const MUTED: u32 = 0x77857f;
 const LINE: u32 = 0xe5eae7;
@@ -49,6 +51,7 @@ pub struct Explorer {
     error: Option<String>,
     notice: String,
     epoch: u64,
+    notice_task: Option<Task<()>>,
     _search_subscription: Subscription,
     _watch: Task<()>,
 }
@@ -98,6 +101,7 @@ impl Explorer {
             error: None,
             notice: String::new(),
             epoch: 0,
+            notice_task: None,
             _search_subscription: subscription,
             _watch: watch,
         };
@@ -150,6 +154,18 @@ impl Explorer {
             }
         })
         .detach();
+        cx.notify();
+    }
+
+    fn show_notice(&mut self, message: impl Into<String>, cx: &mut Context<Self>) {
+        self.notice = message.into();
+        self.notice_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_secs(3)).await;
+            let _ = this.update(cx, |state, cx| {
+                state.notice.clear();
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
 
@@ -254,7 +270,7 @@ impl Explorer {
                 .await;
             let _ = this.update(cx, |state, cx| {
                 match result {
-                    Ok(()) => state.notice = "Snapshot saved".into(),
+                    Ok(()) => state.show_notice("Snapshot saved", cx),
                     Err(error) => state.error = Some(format!("Could not save snapshot. {error:#}")),
                 }
                 cx.notify();
@@ -264,13 +280,14 @@ impl Explorer {
     }
 
     fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .h(px(72.))
+        TitleBar::new()
+            .h(TITLEBAR_HEIGHT)
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_between()
-            .px(px(24.))
+            .pl(px(if cfg!(target_os = "macos") { 96. } else { 20. }))
+            .pr(px(24.))
             .border_b_1()
             .border_color(rgb(LINE))
             .bg(rgb(0xffffff))
@@ -281,8 +298,8 @@ impl Explorer {
                     .gap(px(12.))
                     .child(
                         div()
-                            .size(px(34.))
-                            .rounded(px(11.))
+                            .size(px(28.))
+                            .rounded(px(9.))
                             .bg(rgb(ACCENT))
                             .flex()
                             .items_center()
@@ -298,20 +315,16 @@ impl Explorer {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_lg()
                             .child("USBloom"),
-                    )
-                    .child(
-                        div()
-                            .ml(px(10.))
-                            .text_sm()
-                            .text_color(rgb(MUTED))
-                            .child("Device explorer"),
                     ),
             )
             .child(
                 div()
+                    .id("toolbar-actions")
                     .flex()
                     .items_center()
                     .gap(px(8.))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_double_click(|_, _, cx| cx.stop_propagation())
                     .child(
                         Button::new("open")
                             .ghost()
@@ -328,14 +341,38 @@ impl Explorer {
                             .disabled(self.snapshot.is_none())
                             .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
                     )
+                    .when(self.source.is_none(), |view| {
+                        let label = if self.live {
+                            "Pause automatic refresh"
+                        } else {
+                            "Resume automatic refresh"
+                        };
+                        view.child(
+                            Button::new("auto-refresh")
+                                .ghost()
+                                .icon(if self.live {
+                                    IconName::Pause
+                                } else {
+                                    IconName::Play
+                                })
+                                .selected(!self.live)
+                                .accessibility_label(label)
+                                .tooltip(label)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.live = !this.live;
+                                    if this.live {
+                                        this.scan(cx);
+                                    }
+                                    cx.notify();
+                                })),
+                        )
+                    })
                     .child(
                         Button::new("refresh")
                             .outline()
                             .icon(IconName::RefreshCw)
-                            .label(if self.scanning {
-                                "Reading…"
-                            } else if self.source.is_some() {
-                                "Back to live"
+                            .label(if self.source.is_some() {
+                                "Connected devices"
                             } else {
                                 "Refresh"
                             })
@@ -457,13 +494,14 @@ impl Explorer {
                                     .truncate()
                                     .child(name),
                             )
-                            .child(div().text_xs().text_color(rgb(MUTED)).truncate().child(
-                                if d.base_class_code() == Some(9) {
-                                    "USB hub".into()
-                                } else {
-                                    inventory::ids(d)
-                                },
-                            )),
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(rgb(MUTED))
+                                    .truncate()
+                                    .font_family(cx.theme().mono_font_family.clone())
+                                    .child(inventory::ids(d)),
+                            ),
                     ),
             );
         }
@@ -496,37 +534,6 @@ impl Explorer {
                 ),
             )
             .child(tree)
-            .child(
-                div()
-                    .h(px(48.))
-                    .flex_shrink_0()
-                    .border_t_1()
-                    .border_color(rgb(LINE))
-                    .px(px(20.))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .text_xs()
-                    .text_color(rgb(MUTED))
-                    .child(format!("{} devices", self.rows.len()))
-                    .child(
-                        Button::new("live")
-                            .ghost()
-                            .small()
-                            .label(if self.source.is_some() {
-                                "Snapshot"
-                            } else if self.live {
-                                "● Live"
-                            } else {
-                                "Paused"
-                            })
-                            .disabled(self.source.is_some())
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.live = !this.live;
-                                cx.notify();
-                            })),
-                    ),
-            )
     }
 
     fn detail(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -602,7 +609,8 @@ impl Explorer {
                         .text_color(rgb(MUTED))
                         .child(row.bus.clone())
                         .child("/")
-                        .child(format!("Port {}", d.port_path())),
+                        .child("Port")
+                        .child(code(d.port_path().to_string(), cx)),
                 )
                 .child(
                     div()
@@ -652,12 +660,7 @@ impl Explorer {
                 .gap(px(8.))
                 .flex_wrap()
                 .child(pill(inventory::device_class(d)))
-                .child(pill(inventory::speed(d)))
-                .child(pill(format!(
-                    "{} configuration{}",
-                    configs.len(),
-                    if configs.len() == 1 { "" } else { "s" }
-                ))),
+                .child(pill(inventory::speed(d))),
         );
         if let Some(error) = self
             .snapshot
@@ -681,12 +684,13 @@ impl Explorer {
                 .pb(px(20.))
                 .border_b_1()
                 .border_color(rgb(LINE))
-                .child(metric("VENDOR ID", inventory::hex16(d.vendor_id)))
-                .child(metric("PRODUCT ID", inventory::hex16(d.product_id)))
+                .child(metric("VENDOR ID", inventory::hex16(d.vendor_id), cx))
+                .child(metric("PRODUCT ID", inventory::hex16(d.product_id), cx))
                 .child(metric(
                     "USB VERSION",
                     d.bcd_usb
                         .map_or_else(|| "Unavailable".into(), |v| v.to_string()),
+                    cx,
                 )),
         );
         let mut tabs = div().flex().gap(px(6.)).items_center();
@@ -715,6 +719,15 @@ impl Explorer {
                     let mut choices = div().flex().gap(px(6.));
                     for config in configs {
                         let number = config.number;
+                        if configs.len() == 1 {
+                            choices = choices.child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(format!("Configuration {number}")),
+                            );
+                            continue;
+                        }
                         choices = choices.child(
                             Button::new(("config", number as usize))
                                 .ghost()
@@ -729,13 +742,9 @@ impl Explorer {
                     }
                     config_header = config_header.child(choices).child(
                         div().text_xs().text_color(rgb(MUTED)).child(format!(
-                            "{} · {}",
+                            "{} max · {}",
                             config.max_power,
-                            if config.active {
-                                "Active configuration"
-                            } else {
-                                "Reported configuration"
-                            }
+                            if config.active { "Active" } else { "Inactive" }
                         )),
                     );
                     content = content.child(config_header);
@@ -806,37 +815,25 @@ impl Explorer {
             }
             Tab::Raw => {
                 content = content.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(rgb(MUTED))
-                                .child("All reported descriptor fields"),
-                        )
-                        .child(
-                            Button::new("copy-raw")
-                                .ghost()
-                                .small()
-                                .icon(IconName::Copy)
-                                .label("Copy JSON")
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.write_to_clipboard(ClipboardItem::new_string(
-                                        raw_copy.clone(),
-                                    ));
-                                    this.notice = "Device JSON copied".into();
-                                    cx.notify();
-                                })),
-                        ),
+                    div().flex().items_center().justify_end().child(
+                        Button::new("copy-raw")
+                            .ghost()
+                            .small()
+                            .icon(IconName::Copy)
+                            .label("Copy JSON")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(raw_copy.clone()));
+                                this.show_notice("JSON copied", cx);
+                                cx.notify();
+                            })),
+                    ),
                 );
                 content = content.child(
                     div()
                         .p(px(16.))
                         .bg(rgb(0xf4f6f5))
                         .rounded(px(10.))
-                        .font_family("monospace")
+                        .font_family(cx.theme().mono_font_family.clone())
                         .text_xs()
                         .children(raw.lines().map(|line| div().child(line.to_owned()))),
                 );
@@ -866,6 +863,15 @@ impl Explorer {
         let mut alternatives = div().flex().gap(px(4.));
         for variant in variants {
             let alt = variant.alt_setting;
+            if variants.len() == 1 {
+                alternatives = alternatives.child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(MUTED))
+                        .child(format!("Alt {alt}")),
+                );
+                continue;
+            }
             alternatives = alternatives.child(
                 Button::new(SharedString::from(format!(
                     "alt-{config_number}-{number}-{alt}"
@@ -909,6 +915,7 @@ impl Explorer {
                                     .justify_center()
                                     .text_sm()
                                     .text_color(rgb(ACCENT))
+                                    .font_family(cx.theme().mono_font_family.clone())
                                     .child(format!("{number:02}")),
                             )
                             .child(
@@ -939,16 +946,42 @@ impl Explorer {
                     .px(px(16.))
                     .pb(px(12.))
                     .flex()
+                    .items_baseline()
                     .gap(px(20.))
                     .flex_wrap()
                     .text_xs()
                     .text_color(rgb(MUTED))
-                    .child(format!("Class 0x{:02X}", u8::from(interface.class)))
-                    .child(format!("Subclass 0x{:02X}", interface.sub_class))
-                    .child(format!(
-                        "Protocol {}",
-                        inventory::decoded(Some(interface.protocol), interface.protocol_name())
-                    )),
+                    .child(
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .gap(px(4.))
+                            .child("Class")
+                            .child(code(format!("0x{:02X}", u8::from(interface.class)), cx)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .gap(px(4.))
+                            .child("Subclass")
+                            .child(code(format!("0x{:02X}", interface.sub_class), cx)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .flex_wrap()
+                            .gap(px(4.))
+                            .child("Protocol")
+                            .child(decoded_value(
+                                inventory::decoded(
+                                    Some(interface.protocol),
+                                    interface.protocol_name(),
+                                ),
+                                cx,
+                            )),
+                    ),
             );
         for endpoint in &interface.endpoints {
             let input = endpoint.address.address & 0x80 != 0;
@@ -998,7 +1031,9 @@ impl Explorer {
                     )
                     .child(
                         div()
-                            .w(px(64.))
+                            .w(px(82.))
+                            .flex_shrink_0()
+                            .font_family(cx.theme().mono_font_family.clone())
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
                             .child(format!(
@@ -1009,7 +1044,9 @@ impl Explorer {
                     )
                     .child(
                         div()
-                            .w(px(36.))
+                            .w(px(42.))
+                            .flex_shrink_0()
+                            .font_family(cx.theme().mono_font_family.clone())
                             .text_xs()
                             .text_color(rgb(MUTED))
                             .child(format!("0x{:02X}", endpoint.address.address)),
@@ -1020,17 +1057,16 @@ impl Explorer {
                             .text_sm()
                             .child(endpoint.transfer_type.to_string()),
                     )
-                    .child(
-                        div()
-                            .text_sm()
-                            .child(format!("{} B", endpoint.max_packet_size())),
-                    )
+                    .child(code(format!("{} B", endpoint.max_packet_size()), cx).text_sm())
                     .child(
                         div()
                             .w(px(88.))
                             .text_right()
                             .text_xs()
                             .text_color(rgb(MUTED))
+                            .when(timing.starts_with(|c: char| c.is_ascii_digit()), |view| {
+                                view.font_family(cx.theme().mono_font_family.clone())
+                            })
                             .child(timing),
                     ),
             );
@@ -1042,7 +1078,7 @@ impl Explorer {
                     .pb(px(16.))
                     .text_sm()
                     .text_color(rgb(MUTED))
-                    .child("No endpoints in this alternate setting"),
+                    .child("No endpoints"),
             );
         }
         card
@@ -1053,6 +1089,7 @@ impl Render for Explorer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .bg(rgb(0xffffff))
@@ -1093,33 +1130,25 @@ impl Render for Explorer {
                     .child(self.sidebar(cx))
                     .child(self.detail(cx)),
             )
-            .child(
-                div()
-                    .h(px(30.))
-                    .flex_shrink_0()
-                    .border_t_1()
-                    .border_color(rgb(LINE))
-                    .px(px(20.))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .text_xs()
-                    .text_color(rgb(MUTED))
-                    .child(if self.notice.is_empty() {
-                        "Read-only USB inspection".to_string()
-                    } else {
-                        self.notice.clone()
-                    })
-                    .child(if self.source.is_some() {
-                        "Saved snapshot"
-                    } else if self.scanning {
-                        "Reading devices…"
-                    } else if self.error.is_some() {
-                        "Last successful scan shown"
-                    } else {
-                        "Up to date"
-                    }),
-            )
+            .when(!self.notice.is_empty(), |view| {
+                view.child(
+                    div()
+                        .id("notice")
+                        .role(Role::Status)
+                        .aria_label(self.notice.clone())
+                        .absolute()
+                        .bottom(px(20.))
+                        .right(px(24.))
+                        .px(px(14.))
+                        .py(px(10.))
+                        .rounded(px(8.))
+                        .bg(rgb(INK))
+                        .text_color(rgb(0xffffff))
+                        .shadow_sm()
+                        .text_sm()
+                        .child(self.notice.clone()),
+                )
+            })
     }
 }
 
@@ -1133,14 +1162,34 @@ fn pill(value: String) -> impl IntoElement {
         .text_xs()
         .child(value)
 }
-fn metric(label: &'static str, value: String) -> impl IntoElement {
+fn code(value: impl Into<SharedString>, cx: &App) -> Div {
+    div()
+        .font_family(cx.theme().mono_font_family.clone())
+        .child(value.into())
+}
+
+fn decoded_value(value: String, cx: &App) -> Div {
+    match value.rsplit_once(" · ") {
+        Some((name, raw)) if raw.starts_with("0x") => div()
+            .flex()
+            .items_baseline()
+            .flex_wrap()
+            .gap(px(4.))
+            .child(name.to_owned())
+            .child("·")
+            .child(code(raw.to_owned(), cx)),
+        _ => div().child(value),
+    }
+}
+
+fn metric(label: &'static str, value: String, cx: &App) -> impl IntoElement {
     div()
         .flex_1()
         .flex()
         .flex_col()
         .gap(px(7.))
         .child(div().text_xs().text_color(rgb(MUTED)).child(label))
-        .child(div().text_lg().font_weight(FontWeight::MEDIUM).child(value))
+        .child(code(value, cx).text_lg().font_weight(FontWeight::MEDIUM))
 }
 fn field(label: &'static str, value: String, cx: &Context<Explorer>) -> impl IntoElement {
     let copy = value.clone();
@@ -1157,16 +1206,32 @@ fn field(label: &'static str, value: String, cx: &Context<Explorer>) -> impl Int
                 .text_color(rgb(MUTED))
                 .child(label),
         )
-        .child(div().flex_1().min_w_0().child(value))
+        .child(div().flex_1().min_w_0().child(
+            if matches!(
+                label,
+                "Serial number"
+                    | "Device release"
+                    | "Port path"
+                    | "Device address"
+                    | "Negotiated speed"
+                    | "Control packet size"
+            ) && value != "Unavailable"
+            {
+                code(value, cx)
+            } else {
+                decoded_value(value, cx)
+            },
+        ))
         .child(
             Button::new(label)
                 .ghost()
                 .small()
                 .icon(IconName::Copy)
+                .accessibility_label(format!("Copy {label}"))
                 .tooltip(format!("Copy {label}"))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
-                    this.notice = format!("{label} copied");
+                    this.show_notice(format!("{label} copied"), cx);
                     cx.notify();
                 })),
         )

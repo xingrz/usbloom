@@ -26,8 +26,10 @@ There is no signed public installer yet. See
 [Contributing](CONTRIBUTING.md#run-and-check) to run a local build.
 
 Select a device on the left, then explore **Interfaces**, **Device details**,
-or **Raw data**. **Save snapshot** keeps the current capture; **Open** browses
-one offline, and **Back to live** returns to connected hardware.
+or **Raw data**. Use the pause button beside **Refresh** to stop automatic
+updates while inspecting a device. **Save snapshot** keeps the current
+capture; **Open** browses one offline, and **Connected devices** returns
+to the hardware.
 
 | Shortcut | Action |
 | --- | --- |
