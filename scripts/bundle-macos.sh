@@ -11,12 +11,14 @@ app="$PWD/dist/USBloom.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "target/$profile/usbloom" "$app/Contents/MacOS/USBloom"
 cp LICENSE "$app/Contents/Resources/LICENSE"
+cp assets/USBloom.icns "$app/Contents/Resources/USBloom.icns"
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleExecutable</key><string>USBloom</string>
   <key>CFBundleIdentifier</key><string>me.xingrz.usbloom</string>
+  <key>CFBundleIconFile</key><string>USBloom.icns</string>
   <key>CFBundleName</key><string>USBloom</string>
   <key>CFBundleDisplayName</key><string>USBloom</string>
   <key>CFBundlePackageType</key><string>APPL</string>

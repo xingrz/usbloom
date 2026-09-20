@@ -1,14 +1,44 @@
 # USBloom
 
-Explore your USB devices, down to every endpoint.
+**Explore your USB devices, down to every endpoint.**
 
-USBloom is a desktop USB explorer that makes it easier to understand what
-is connected and how it works. Follow a device through its hubs, inspect
-its interfaces and alternate settings, and read endpoint details without
-decoding every number by hand.
+USBloom is a native desktop explorer for the moments when “device
+connected” is not enough. Follow a board through its hubs, inspect its
+interfaces, and understand what each endpoint does.
 
-The first version is in development, with macOS as the primary platform.
-Windows and Linux support is being developed alongside it.
+- Browse the physical USB tree, with search that keeps parent hubs visible.
+- Inspect configurations, interfaces, and alternate settings side by side
+  with their decoded class names and endpoint details.
+- Read transfer direction, packet sizes, and service intervals without
+  translating every field by hand. Hover over endpoints for context.
+- Keep up with connected devices, or pause live refresh while inspecting.
+- Copy individual device fields or JSON. Save a snapshot and open it later,
+  even when the hardware is no longer connected.
+
+USBloom observes devices. Choosing a configuration or alternate setting
+in the interface does not change the hardware.
+
+## Try it
+
+The first version is in development. macOS is the primary platform;
+Windows and Linux are checked by CI but still need hands-on validation.
+There is no signed public installer yet. See
+[Contributing](CONTRIBUTING.md#run-and-check) to run a local build.
+
+Select a device on the left, then explore **Interfaces**, **Device details**,
+or **Raw data**. **Save snapshot** keeps the current capture; **Open** browses
+one offline, and **Back to live** returns to connected hardware.
+
+| Shortcut | Action |
+| --- | --- |
+| ⌘/Ctrl F | Find a device |
+| ⌘/Ctrl R | Refresh / return to live devices |
+| ⌘/Ctrl S | Save a snapshot |
+| ⌘/Ctrl O | Open a snapshot |
+
+Some devices or operating-system permissions prevent full descriptor
+reads. USBloom shows unavailable fields rather than guessing. Snapshots
+can contain device serial numbers; review them before sharing.
 
 ## License
 

@@ -7,3 +7,4 @@
 *.log
 .env
 .env.*
+/assets/*.iconset/
