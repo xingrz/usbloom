@@ -1436,7 +1436,7 @@ dependencies = [
 [[package]]
 name = "cyme"
 version = "3.0.2"
-source = "git+https://github.com/xingrz/cyme?rev=4289d2e1f85008431e3ff02cc85474b16533cc72#4289d2e1f85008431e3ff02cc85474b16533cc72"
+source = "git+https://github.com/xingrz/cyme?rev=71bfc962c31f7323135bd918b7e46eff6e010edd#71bfc962c31f7323135bd918b7e46eff6e010edd"
 dependencies = [
  "chrono",
  "clap",
@@ -7689,6 +7689,7 @@ dependencies = [
  "gpui-kit",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

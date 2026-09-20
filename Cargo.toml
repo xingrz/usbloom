@@ -14,6 +14,7 @@ cyme = { version = "=3.0.2", default-features = false, features = ["native"] }
 gpui-kit = "=0.6.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tempfile = "3"
 
 [profile.dev]
 debug = 1
@@ -27,4 +28,4 @@ dbg_macro = "deny"
 todo = "deny"
 
 [patch.crates-io]
-cyme = { git = "https://github.com/xingrz/cyme", rev = "4289d2e1f85008431e3ff02cc85474b16533cc72" }
+cyme = { git = "https://github.com/xingrz/cyme", rev = "71bfc962c31f7323135bd918b7e46eff6e010edd" }
