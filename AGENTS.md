@@ -14,6 +14,8 @@ targets whose runtime support must be reported honestly.
   normalization, and UI independent; never block the window on USB I/O.
 - The application is GPL-3.0-or-later. Preserve dependency notices and
   provide corresponding source with distributed binaries.
+- Register OS device notifications before the initial scan. Coalesce hotplug
+  bursts and changes during acquisition; do not poll on a periodic timer.
 - Scanning is observational. Do not reset devices, detach drivers, claim
   interfaces, or change configurations or alternate settings.
 - A failed or partial read is not an empty device. Preserve unknown values

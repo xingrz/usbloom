@@ -23,6 +23,18 @@ override and update the registry dependency. Otherwise rebase the small
 patch onto the chosen upstream tag, pin its full commit, and update
 Cargo.lock. Never depend on a moving branch.
 
+## Device notifications
+
+The app uses nusb's hotplug stream alongside cyme's native acquisition.
+On macOS it registers IOKit arrival and termination notifications; Windows
+uses Configuration Manager device notifications, and Linux uses udev
+netlink events. Register the stream before the initial scan, coalesce
+event bursts, and keep descriptor reads on background tasks.
+
+A notification failure is shown with a retry action, without silently
+switching to periodic polling. Opening a snapshot invalidates outstanding
+scan results and suspends new live scans while notifications stay armed.
+
 ## Text selection
 
 GPUI Kit 0.6.4's plain SelectableText needs an explicit redraw subscription.

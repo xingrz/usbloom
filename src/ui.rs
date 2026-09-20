@@ -4,6 +4,7 @@ use raw_data::RawData;
 use values::Values;
 
 use cyme::usb::{Configuration, Interface};
+use futures_lite::StreamExt;
 use gpui_kit::{
     assets::IconName,
     component::{
@@ -21,7 +22,10 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use usbloom::inventory::{self, DeviceRow, Snapshot};
+use usbloom::{
+    inventory::{self, DeviceRow, Snapshot},
+    monitor::{self, ScanGate},
+};
 
 gpui_kit::actions!(usbloom, [Quit, Refresh, Find, OpenSnapshot, SaveSnapshot]);
 pub const TITLEBAR_HEIGHT: Pixels = px(64.);
@@ -45,34 +49,21 @@ pub struct Explorer {
     search: Entity<InputState>,
     focus: FocusHandle,
     detail_scroll: ScrollHandle,
-    scanning: bool,
-    live: bool,
+    scans: ScanGate,
+    watch_error: Option<String>,
+    debounce: Option<Task<()>>,
     source: Option<String>,
     error: Option<String>,
     notice: String,
-    epoch: u64,
     notice_task: Option<Task<()>>,
     _search_subscription: Subscription,
-    _watch: Task<()>,
+    watch: Option<Task<()>>,
 }
 
 impl Explorer {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find a device…"));
         let subscription = cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify());
-        let watch = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor().timer(Duration::from_secs(5)).await;
-                let Some(this) = this.upgrade() else {
-                    break;
-                };
-                this.update(cx, |state, cx| {
-                    if state.live && state.source.is_none() {
-                        state.scan(cx);
-                    }
-                });
-            }
-        });
         let modifier = if cfg!(target_os = "macos") {
             "cmd"
         } else {
@@ -96,18 +87,18 @@ impl Explorer {
             search,
             focus: cx.focus_handle(),
             detail_scroll: ScrollHandle::new(),
-            scanning: false,
-            live: true,
+            scans: ScanGate::default(),
+            watch_error: None,
+            debounce: None,
             source: None,
             error: None,
             notice: String::new(),
-            epoch: 0,
             notice_task: None,
             _search_subscription: subscription,
-            _watch: watch,
+            watch: None,
         };
         view.focus.focus(window, cx);
-        view.scan(cx);
+        view.start_watch(cx);
         view
     }
 
@@ -126,13 +117,69 @@ impl Explorer {
         self.snapshot = Some(Arc::new(snapshot));
     }
 
-    fn scan(&mut self, cx: &mut Context<Self>) {
-        if self.scanning {
+    fn start_watch(&mut self, cx: &mut Context<Self>) {
+        self.watch_error = None;
+        self.watch = Some(cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async { monitor::watch() })
+                .await;
+            let mut events = match result {
+                Ok(events) => events,
+                Err(error) => {
+                    let _ = this.update(cx, |state, cx| {
+                        state.watch_error = Some(format!("Device updates unavailable. {error}"));
+                        if state.source.is_none() {
+                            state.scan(cx);
+                        }
+                        cx.notify();
+                    });
+                    return;
+                }
+            };
+            // The watch is registered before enumeration starts.
+            let _ = this.update(cx, |state, cx| {
+                if state.source.is_none() {
+                    state.scan(cx);
+                }
+            });
+            while events.next().await.is_some() {
+                if this
+                    .update(cx, |state, cx| state.device_changed(cx))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            let _ = this.update(cx, |state, cx| {
+                state.watch_error = Some("Device updates stopped.".into());
+                cx.notify();
+            });
+        }));
+    }
+
+    fn device_changed(&mut self, cx: &mut Context<Self>) {
+        if self.source.is_some() {
             return;
         }
-        self.scanning = true;
-        self.epoch += 1;
-        let epoch = self.epoch;
+        // One settling delay per burst, never a periodic timer. This also gives
+        // composite interfaces time to appear after the parent device arrives.
+        self.debounce = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(250))
+                .await;
+            let _ = this.update(cx, |state, cx| {
+                if state.source.is_none() {
+                    state.scan(cx);
+                }
+            });
+        }));
+    }
+
+    fn scan(&mut self, cx: &mut Context<Self>) {
+        let Some(generation) = self.scans.request() else {
+            return;
+        };
         let job = cx
             .background_executor()
             .spawn(async { Snapshot::capture() });
@@ -140,16 +187,18 @@ impl Explorer {
             let result = job.await;
             if let Some(this) = this.upgrade() {
                 this.update(cx, |state, cx| {
-                    if state.epoch != epoch {
+                    let Some(followup) = state.scans.complete(generation) else {
                         return;
-                    }
-                    state.scanning = false;
+                    };
                     match result {
                         Ok(snapshot) => {
                             state.apply_snapshot(snapshot);
                             state.error = None;
                         }
                         Err(error) => state.error = Some(format!("Scan failed. {error}")),
+                    }
+                    if followup && state.source.is_none() {
+                        state.scan(cx);
                     }
                     cx.notify();
                 });
@@ -174,7 +223,11 @@ impl Explorer {
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.source = None;
         self.notice.clear();
-        self.scan(cx);
+        if self.watch_error.is_some() {
+            self.start_watch(cx);
+        } else {
+            self.scan(cx);
+        }
     }
 
     fn select(&mut self, key: String, cx: &mut Context<Self>) {
@@ -222,8 +275,8 @@ impl Explorer {
             let _ = this.update(cx, |state, cx| {
                 match result {
                     Ok(snapshot) => {
-                        state.epoch += 1;
-                        state.scanning = false;
+                        state.scans.invalidate();
+                        state.debounce = None;
                         if !snapshot
                             .rows()
                             .iter()
@@ -344,44 +397,15 @@ impl Explorer {
                             .disabled(self.snapshot.is_none())
                             .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
                     )
-                    .when(self.source.is_none(), |view| {
-                        let label = if self.live {
-                            "Pause automatic refresh"
-                        } else {
-                            "Resume automatic refresh"
-                        };
+                    .when(self.source.is_some(), |view| {
                         view.child(
-                            Button::new("auto-refresh")
-                                .ghost()
-                                .icon(if self.live {
-                                    IconName::Pause
-                                } else {
-                                    IconName::Play
-                                })
-                                .selected(!self.live)
-                                .accessibility_label(label)
-                                .tooltip(label)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.live = !this.live;
-                                    if this.live {
-                                        this.scan(cx);
-                                    }
-                                    cx.notify();
-                                })),
+                            Button::new("connected-devices")
+                                .outline()
+                                .icon(IconName::Usb)
+                                .label("Connected devices")
+                                .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
                         )
-                    })
-                    .child(
-                        Button::new("refresh")
-                            .outline()
-                            .icon(IconName::RefreshCw)
-                            .label(if self.source.is_some() {
-                                "Connected devices"
-                            } else {
-                                "Refresh"
-                            })
-                            .disabled(self.scanning)
-                            .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
-                    ),
+                    }),
             )
     }
 
@@ -528,7 +552,7 @@ impl Explorer {
                     .p(px(20.))
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child(if self.scanning && self.snapshot.is_none() {
+                    .child(if self.scans.is_scanning() && self.snapshot.is_none() {
                         "Reading devices…"
                     } else if query.is_empty() {
                         "No connected devices"
@@ -1159,6 +1183,29 @@ impl Render for Explorer {
             .on_action(cx.listener(|this, _: &OpenSnapshot, _, cx| this.open(cx)))
             .on_action(cx.listener(|this, _: &SaveSnapshot, _, cx| this.save(cx)))
             .child(self.toolbar(cx))
+            .when_some(
+                self.watch_error.clone().filter(|_| self.source.is_none()),
+                |view, error| {
+                    view.child(
+                        div()
+                            .px(px(20.))
+                            .py(px(8.))
+                            .flex()
+                            .items_center()
+                            .gap(px(12.))
+                            .bg(cx.theme().warning)
+                            .text_color(cx.theme().warning_foreground)
+                            .child(div().flex_1().child(error))
+                            .child(
+                                Button::new("retry-watch")
+                                    .ghost()
+                                    .small()
+                                    .label("Retry")
+                                    .on_click(cx.listener(|this, _, _, cx| this.start_watch(cx))),
+                            ),
+                    )
+                },
+            )
             .when_some(self.error.clone(), |view, error| {
                 view.child(
                     div()

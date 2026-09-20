@@ -11,7 +11,7 @@ interfaces, and understand what each endpoint does.
   with their decoded class names and endpoint details.
 - Read transfer direction, packet sizes, and service intervals without
   translating every field by hand. Hover over endpoints for context.
-- Keep up with connected devices, or pause live refresh while inspecting.
+- Watch the tree update automatically when devices connect or disconnect.
 - Select and copy device values or JSON. Save a snapshot and open it later,
   even when the hardware is no longer connected.
 
@@ -26,10 +26,9 @@ There is no signed public installer yet. See
 [Contributing](CONTRIBUTING.md#run-and-check) to run a local build.
 
 Select a device on the left, then explore **Interfaces**, **Device details**,
-or **Raw data**. Use the pause button beside **Refresh** to stop automatic
-updates while inspecting a device. **Save snapshot** keeps the current
-capture; **Open** browses one offline, and **Connected devices** returns
-to the hardware.
+or **Raw data**. Device changes appear automatically. **Save snapshot** keeps
+the current capture; **Open** browses one offline, and **Connected devices**
+returns to the hardware.
 
 Drag over a value to select text, then copy with **⌘/Ctrl C** or the
 right-click menu. Right-clicking a value without a selection copies that
@@ -39,7 +38,7 @@ system’s light or dark appearance.
 | Shortcut | Action |
 | --- | --- |
 | ⌘/Ctrl F | Find a device |
-| ⌘/Ctrl R | Refresh / return to live devices |
+| ⌘/Ctrl R | Rescan / return to connected devices |
 | ⌘/Ctrl S | Save a snapshot |
 | ⌘/Ctrl O | Open a snapshot |
 

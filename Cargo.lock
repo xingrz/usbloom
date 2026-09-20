@@ -7777,7 +7777,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cyme",
+ "futures-lite",
  "gpui-kit",
+ "nusb",
  "serde",
  "serde_json",
  "tempfile",
