@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
+
 mod appearance;
 mod ui;
 use gpui_kit::{
@@ -5,6 +10,11 @@ use gpui_kit::{
     *,
 };
 use ui::{Explorer, Quit};
+
+#[cfg(target_os = "macos")]
+fn traffic_light_position() -> Point<Pixels> {
+    point(px(20.), (ui::TITLEBAR_HEIGHT - px(14.)) / 2.)
+}
 
 fn main() {
     gpui_kit::application()
@@ -29,16 +39,22 @@ fn main() {
                         titlebar: Some(TitlebarOptions {
                             title: Some("USBloom".into()),
                             appears_transparent: true,
-                            traffic_light_position: Some(point(
-                                px(20.),
-                                (ui::TITLEBAR_HEIGHT - px(14.)) / 2.,
-                            )),
+                            #[cfg(target_os = "macos")]
+                            traffic_light_position: Some(traffic_light_position()),
+                            #[cfg(not(target_os = "macos"))]
+                            traffic_light_position: None,
                         }),
                         app_id: Some("me.xingrz.usbloom".into()),
                         window_min_size: Some(size(px(960.), px(640.))),
                         ..TitleBar::window_options()
                     },
                     |window, cx| {
+                        // AppKit lays out its standard buttons again after the
+                        // window is shown. Align them after that initial layout.
+                        #[cfg(target_os = "macos")]
+                        window.on_next_frame(|window, _| {
+                            window.set_traffic_light_position(traffic_light_position());
+                        });
                         appearance::sync(Some(window), cx);
                         window
                             .observe_window_appearance(|window, cx| {
