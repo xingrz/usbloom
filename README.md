@@ -6,14 +6,18 @@ USBloom is a native desktop explorer for the moments when “device
 connected” is not enough. Follow a board through its hubs, inspect its
 interfaces, and understand what each endpoint does.
 
+![USBloom showing a USB device tree and serial device details](screenshot.png)
+
 - Browse the physical USB tree, with search that keeps parent hubs visible.
-- Inspect configurations, interfaces, and alternate settings side by side
-  with their decoded class names and endpoint details.
+- See which interfaces a device exposes, with readable class names such as
+  Audio, Video, and CDC Data alongside their raw descriptor values.
+- Explore configurations, alternate settings, and endpoint details.
 - Read transfer direction, packet sizes, and service intervals without
   translating every field by hand. Hover over endpoints for context.
 - Watch the tree update automatically when devices connect or disconnect.
 - Select and copy device values or JSON. Save a snapshot and open it later,
   even when the hardware is no longer connected.
+- Use a light or dark appearance that follows your system.
 
 USBloom observes devices. Choosing a configuration or alternate setting
 in the interface does not change the hardware.
@@ -32,8 +36,7 @@ returns to the hardware.
 
 Drag over a value to select text, then copy with **⌘/Ctrl C** or the
 right-click menu. Right-clicking a value without a selection copies that
-value. Field labels stay out of the selection. The interface follows your
-system’s light or dark appearance.
+value. Field labels stay out of the selection.
 
 | Shortcut | Action |
 | --- | --- |
