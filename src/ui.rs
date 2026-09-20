@@ -5,6 +5,7 @@ use gpui_kit::{
         Disableable, Icon, Selectable, Sizable,
         button::*,
         input::{Input, InputEvent, InputState},
+        tooltip::Tooltip,
     },
     prelude::*,
     *,
@@ -204,7 +205,13 @@ impl Explorer {
                     Ok(snapshot) => {
                         state.epoch += 1;
                         state.scanning = false;
-                        state.selected = None;
+                        if !snapshot
+                            .rows()
+                            .iter()
+                            .any(|row| state.selected.as_ref() == Some(&row.key))
+                        {
+                            state.selected = None;
+                        }
                         state.config = None;
                         state.alternatives.clear();
                         state.detail_scroll.set_offset(point(px(0.), px(0.)));
@@ -380,6 +387,8 @@ impl Explorer {
             tree = tree.child(
                 div()
                     .id(SharedString::from(format!("row-{}", row.key)))
+                    .role(Role::Button)
+                    .aria_label(format!("{name}, {}", inventory::ids(d)))
                     .flex()
                     .items_center()
                     .gap(px(8.))
@@ -738,8 +747,13 @@ impl Explorer {
                             .find(|i| Some(i.alt_setting) == alt)
                             .or_else(|| variants.iter().copied().find(|i| i.active))
                             .unwrap_or(variants[0]);
-                        content =
-                            content.child(self.interface_card(config, &variants, interface, cx));
+                        content = content.child(self.interface_card(
+                            config,
+                            &variants,
+                            interface,
+                            d.extra.as_ref().and_then(|e| e.negotiated_speed.as_ref()),
+                            cx,
+                        ));
                     }
                     if config.interfaces.is_empty() {
                         content = content.child(empty("No interface descriptors were returned."));
@@ -782,17 +796,11 @@ impl Explorer {
                     ("Port path", d.port_path().to_string()),
                     ("Device address", d.location_id.number.to_string()),
                     ("Negotiated speed", inventory::speed(d)),
-                    (
-                        "Control packet size",
-                        d.extra.as_ref().map_or_else(
-                            || "Unavailable".into(),
-                            |e| format!("{} bytes", e.max_packet_size),
-                        ),
-                    ),
+                    ("Control packet size", inventory::control_packet_size(d)),
                 ];
-                let mut list = div().flex().flex_col();
+                let mut list = div().flex_shrink_0().flex().flex_col();
                 for (label, value) in fields {
-                    list = list.child(field(label, value));
+                    list = list.child(field(label, value, cx));
                 }
                 content = content.child(list);
             }
@@ -850,6 +858,7 @@ impl Explorer {
         config: &Configuration,
         variants: &[&Interface],
         interface: &Interface,
+        speed: Option<&cyme::usb::Speed>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let config_number = config.number;
@@ -943,8 +952,34 @@ impl Explorer {
             );
         for endpoint in &interface.endpoints {
             let input = endpoint.address.address & 0x80 != 0;
+            let timing =
+                usbloom::descriptors::interval(&endpoint.transfer_type, speed, endpoint.interval);
+            let help = format!(
+                "{} {} {} bInterval: {}. {}",
+                if input {
+                    "IN: device to host."
+                } else {
+                    "OUT: host to device."
+                },
+                usbloom::descriptors::transfer_help(&endpoint.transfer_type),
+                if matches!(endpoint.transfer_type, cyme::usb::TransferType::Isochronous) {
+                    format!(
+                        "{} synchronization; {} usage.",
+                        endpoint.sync_type, endpoint.usage_type
+                    )
+                } else {
+                    String::new()
+                },
+                endpoint.interval,
+                timing
+            );
             card = card.child(
                 div()
+                    .id(SharedString::from(format!(
+                        "endpoint-{config_number}-{number}-{}",
+                        endpoint.address.address
+                    )))
+                    .tooltip(move |window, cx| Tooltip::new(help.clone()).build(window, cx))
                     .px(px(16.))
                     .py(px(12.))
                     .border_t_1()
@@ -996,7 +1031,7 @@ impl Explorer {
                             .text_right()
                             .text_xs()
                             .text_color(rgb(MUTED))
-                            .child(format!("bInterval {}", endpoint.interval)),
+                            .child(timing),
                     ),
             );
         }
@@ -1107,7 +1142,8 @@ fn metric(label: &'static str, value: String) -> impl IntoElement {
         .child(div().text_xs().text_color(rgb(MUTED)).child(label))
         .child(div().text_lg().font_weight(FontWeight::MEDIUM).child(value))
 }
-fn field(label: &'static str, value: String) -> impl IntoElement {
+fn field(label: &'static str, value: String, cx: &Context<Explorer>) -> impl IntoElement {
+    let copy = value.clone();
     div()
         .py(px(13.))
         .border_b_1()
@@ -1122,6 +1158,18 @@ fn field(label: &'static str, value: String) -> impl IntoElement {
                 .child(label),
         )
         .child(div().flex_1().min_w_0().child(value))
+        .child(
+            Button::new(label)
+                .ghost()
+                .small()
+                .icon(IconName::Copy)
+                .tooltip(format!("Copy {label}"))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
+                    this.notice = format!("{label} copied");
+                    cx.notify();
+                })),
+        )
 }
 fn empty(message: &'static str) -> impl IntoElement {
     div()
