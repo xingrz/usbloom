@@ -24,12 +24,11 @@ in the interface does not change the hardware.
 
 ## Try it
 
-The first version is in development. macOS is the primary platform;
-Windows and Linux are checked by CI but still need hands-on validation.
-The first macOS download targets Apple Silicon and is not signed with
-Developer ID or notarized. See [installation notes](docs/install-macos.md).
-Release downloads will appear on [GitHub Releases](https://github.com/xingrz/usbloom/releases)
-when the first version is published. See
+Download the Apple Silicon macOS app from
+[GitHub Releases](https://github.com/xingrz/usbloom/releases).
+It is not signed with Developer ID or notarized; see
+[installation notes](docs/install-macos.md).
+Windows and Linux remain experimental. See
 [Contributing](CONTRIBUTING.md#run-and-check) to run a local build.
 
 Select a device on the left, then explore **Interfaces**, **Device details**,
