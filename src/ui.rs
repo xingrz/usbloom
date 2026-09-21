@@ -1,14 +1,18 @@
 mod raw_data;
 mod values;
+#[cfg(target_os = "windows")]
+mod windows_titlebar;
 use raw_data::RawData;
 use values::Values;
 
 use cyme::usb::{Configuration, Interface};
 use futures_lite::StreamExt;
+#[cfg(not(target_os = "windows"))]
+use gpui_kit::component::TitleBar;
 use gpui_kit::{
     assets::IconName,
     component::{
-        ActiveTheme, Disableable, Icon, InteractiveElementExt, Selectable, Sizable, TitleBar,
+        ActiveTheme, Disableable, Icon, InteractiveElementExt, Selectable, Sizable,
         button::*,
         input::{Copy, Input, InputEvent, InputState},
         tooltip::Tooltip,
@@ -16,6 +20,7 @@ use gpui_kit::{
     prelude::*,
     *,
 };
+
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -28,7 +33,11 @@ use usbloom::{
 };
 
 gpui_kit::actions!(usbloom, [Quit, Refresh, Find, OpenSnapshot, SaveSnapshot]);
-pub const TITLEBAR_HEIGHT: Pixels = px(64.);
+pub const TITLEBAR_HEIGHT: Pixels = px(if cfg!(target_os = "windows") {
+    48.
+} else {
+    64.
+});
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -335,18 +344,17 @@ impl Explorer {
         .detach();
     }
 
-    fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        TitleBar::new()
-            .h(TITLEBAR_HEIGHT)
+    fn toolbar(&self, _window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let content = div()
+            .h_full()
+            .flex_1()
+            .min_w_0()
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_between()
             .pl(px(if cfg!(target_os = "macos") { 96. } else { 20. }))
             .pr(px(24.))
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .bg(cx.theme().background)
             .child(
                 div()
                     .flex()
@@ -406,7 +414,20 @@ impl Explorer {
                                 .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
                         )
                     }),
-            )
+            );
+
+        #[cfg(target_os = "windows")]
+        return windows_titlebar::title_bar(content, _window, cx).into_any_element();
+
+        #[cfg(not(target_os = "windows"))]
+        TitleBar::new()
+            .h(TITLEBAR_HEIGHT)
+            .pl_0()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .bg(cx.theme().background)
+            .child(content)
+            .into_any_element()
     }
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1155,7 +1176,7 @@ impl Explorer {
 }
 
 impl Render for Explorer {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .relative()
@@ -1182,7 +1203,7 @@ impl Render for Explorer {
             }))
             .on_action(cx.listener(|this, _: &OpenSnapshot, _, cx| this.open(cx)))
             .on_action(cx.listener(|this, _: &SaveSnapshot, _, cx| this.save(cx)))
-            .child(self.toolbar(cx))
+            .child(self.toolbar(window, cx))
             .when_some(
                 self.watch_error.clone().filter(|_| self.source.is_none()),
                 |view, error| {
