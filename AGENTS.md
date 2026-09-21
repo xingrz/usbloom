@@ -50,8 +50,10 @@ targets whose runtime support must be reported honestly.
   tracks and stable when a thumb appears or expands.
 - Show raw values alongside decoded meanings without overwhelming the
   initial view. Unknown and vendor-specific values must remain inspectable.
-- README.md is for users. Put development instructions in CONTRIBUTING.md
-  and architectural detail in docs/. Keep this file useful to future agents.
+- README.md covers purpose, screenshots, and installation. Omit routine
+  selection and keyboard instructions. Put development instructions in
+  CONTRIBUTING.md and architectural detail in docs/. Keep this file useful
+  to future agents.
 - Record durable conclusions only. Do not refer to conversations, prompts,
   approvals, or the history of an agent's attempts in repository content.
 
