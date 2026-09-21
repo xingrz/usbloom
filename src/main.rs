@@ -45,6 +45,8 @@ fn main() {
                             traffic_light_position: None,
                         }),
                         app_id: Some("me.xingrz.usbloom".into()),
+                        #[cfg(target_os = "linux")]
+                        window_decorations: Some(WindowDecorations::Server),
                         window_min_size: Some(size(px(960.), px(640.))),
                         ..TitleBar::window_options()
                     },

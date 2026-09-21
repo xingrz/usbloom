@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+mod linux_titlebar;
 mod raw_data;
 mod values;
 #[cfg(target_os = "windows")]
@@ -33,11 +35,7 @@ use usbloom::{
 };
 
 gpui_kit::actions!(usbloom, [Quit, Refresh, Find, OpenSnapshot, SaveSnapshot]);
-pub const TITLEBAR_HEIGHT: Pixels = px(if cfg!(target_os = "windows") {
-    48.
-} else {
-    64.
-});
+pub const TITLEBAR_HEIGHT: Pixels = px(if cfg!(target_os = "macos") { 64. } else { 48. });
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -418,6 +416,13 @@ impl Explorer {
 
         #[cfg(target_os = "windows")]
         return windows_titlebar::title_bar(content, _window, cx).into_any_element();
+
+        #[cfg(target_os = "linux")]
+        if matches!(_window.window_decorations(), Decorations::Client { .. })
+            && linux_titlebar::is_gnome()
+        {
+            return linux_titlebar::HeaderBar(content.into_any_element()).into_any_element();
+        }
 
         #[cfg(not(target_os = "windows"))]
         TitleBar::new()

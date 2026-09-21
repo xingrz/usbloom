@@ -33,5 +33,15 @@ and window controls must remain aligned, clickable, and clear of each
 other; toolbar actions must not initiate window dragging.
 
 macOS applies its traffic-light placement after the initial native layout.
-Windows and Linux use Kit's platform controls without macOS offsets.
-Linux controls also depend on the compositor's decoration mode.
+Windows uses system caption glyphs in 46-by-32 logical-pixel hit regions
+anchored to the top right. GPUI maps these regions to native window actions,
+including the maximize snap flyout. The integrated toolbar is 48 pixels high.
+See Microsoft's [titlebar design guidance](https://learn.microsoft.com/en-us/windows/apps/design/basics/titlebar-design).
+
+Linux requests server decorations and omits duplicate client controls when
+the compositor supplies them. GNOME on Wayland requires client decorations;
+its fallback uses circular controls in a 48-pixel headerbar. Other client
+decoration environments retain Kit's controls. These are application-drawn
+controls, not GTK widgets. Kit's current Linux frame remains square because
+GPUI does not provide rounded content clipping; rounded GNOME window frames
+are not yet reproduced.
