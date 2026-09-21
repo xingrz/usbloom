@@ -31,26 +31,35 @@ Keep a published tag and its assets immutable.
   the cyme fork, notices, lockfile, relative Cargo source configuration,
   build instructions, and source revision. Private local captures, build
   output, untracked files, and credentials never enter the source archive.
-- Build the Apple Silicon macOS binary **from that source archive**, with
-  Cargo's `--frozen` mode and networking disabled for dependency resolution.
+- Build macOS ARM64 and Windows/Linux x64 and ARM64 binaries **from that
+  source archive**, using Cargo's `--frozen` mode with dependency downloads
+  disabled.
 - Assemble a fresh `.app`, decode its ICNS to verify integrity, and validate
   its ad-hoc signature. Create a DMG with an Applications shortcut, install
   instructions, license, and notices.
-- Compute SHA256 checksums, then attach all files to a draft release. Only
+- Package Windows as ZIP and Linux as tar.gz, with a single top-level
+  folder containing the executable, install notes, license, dependency
+  notices, and source revision. Validate executable architecture and the
+  Windows GUI subsystem before packaging. Windows statically links its C
+  runtime; Linux targets the Ubuntu 24.04 system-library baseline.
+- Require all five binary packages and corresponding source before
+  computing SHA256 checksums and attaching files to a draft release. Only
   this final job has permission to write release content. A retry may
   replace draft attachments but refuses to modify a published release.
 
 System fonts are used; no font files are embedded. The macOS package uses
 an ad-hoc signature for Apple Silicon execution, not Developer ID signing
-or notarization. No signing secrets are required. Windows, Linux, and
-Intel macOS installers are outside the first release's scope.
+or notarization. No signing secrets are required. Windows and Linux use
+portable archives; Intel macOS packages are not currently produced.
 
 ## Review the draft
 
-Download the DMG and source archive from the draft. Verify checksums, the
-app icon, drag-to-install, startup, and basic device browsing on a real
-Mac. Check the archive's SOURCE_REVISION against the tag. Confirm the
-release notes accurately describe platform validation and signing.
+Download packages and the source archive from the draft. Verify checksums,
+archive contents, executable architecture, and source revisions. Check the
+macOS app icon and drag-to-install. Run the extracted ARM64 packages in the
+Windows and Linux VMs and check startup and basic device browsing. Check
+the archive's SOURCE_REVISION against the tag. Confirm the release notes
+accurately describe platform validation and signing.
 Publish the draft only after this review. Keep the matching source asset
 available for as long as binaries are distributed.
 

@@ -82,8 +82,92 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+  portable:
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            binary: usbloom.exe
+          - os: windows-11-arm
+            platform: windows
+            arch: arm64
+            binary: usbloom.exe
+          - os: ubuntu-24.04
+            platform: linux
+            arch: x64
+            binary: usbloom
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            binary: usbloom
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      CARGO_NET_OFFLINE: 'true'
+      CARGO_INCREMENTAL: '0'
+      RUSTFLAGS: ${{ matrix.platform == 'windows' && '-C target-feature=+crt-static' || '' }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-source
+          path: release
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.95.0
+      - name: Install Linux libraries
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libfontconfig-dev libwayland-dev \
+            libwebkit2gtk-4.1-dev libxkbcommon-x11-dev libx11-xcb-dev \
+            libssl-dev libzstd-dev libvulkan-dev libudev-dev
+      - name: Extract corresponding source
+        run: |
+          mkdir source
+          tar -xzf "release/USBloom-${RELEASE_TAG#v}-source.tar.gz" -C source --strip-components=1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: source -> target
+          shared-key: release-${{ matrix.platform }}-${{ matrix.arch }}
+      - name: Build and package from the distributed source archive offline
+        env:
+          PACKAGE_PLATFORM: ${{ matrix.platform }}
+          PACKAGE_ARCH: ${{ matrix.arch }}
+          PACKAGE_BINARY: ${{ matrix.binary }}
+        run: |
+          cd source
+          cargo build --release --frozen
+          python3 scripts/release.py portable --tag "$RELEASE_TAG" \
+            --platform "$PACKAGE_PLATFORM" --arch "$PACKAGE_ARCH" \
+            --binary "target/release/$PACKAGE_BINARY" --output ../release
+      - name: Check Linux runtime linkage
+        if: matrix.platform == 'linux'
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          report = subprocess.check_output(["ldd", "source/target/release/usbloom"], text=True)
+          print(report)
+          assert "not found" not in report, "Missing Linux shared libraries"
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            release/USBloom-*-windows-*.zip
+            release/USBloom-*-linux-*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
   draft:
-    needs: [checks, source, macos]
+    needs: [checks, source, macos, portable]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -97,6 +181,9 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref_name }}
           persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.95.0
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-*
@@ -105,13 +192,13 @@ jobs:
       - name: Verify assets and prepare a draft
         shell: bash
         run: |
-          test -s "dist/release/USBloom-${RELEASE_TAG#v}-macos-arm64.dmg"
-          test -s "dist/release/USBloom-${RELEASE_TAG#v}-source.tar.gz"
+          python3 scripts/release.py verify-assets --tag "$RELEASE_TAG"
           test "$(cat dist/release/SOURCE_REVISION)" = "$(git rev-parse HEAD)"
           python3 scripts/release.py checksums
           if gh release view "$RELEASE_TAG" --json isDraft > /tmp/release.json; then
             python3 -c 'import json; assert json.load(open("/tmp/release.json"))["isDraft"], "Published releases must not be overwritten"'
-            gh release edit "$RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"
+            gh release edit "$RELEASE_TAG" --target "$(git rev-parse HEAD)" \
+              --notes-file "docs/releases/$RELEASE_TAG.md"
             gh release upload "$RELEASE_TAG" dist/release/* --clobber
           else
             gh release create "$RELEASE_TAG" dist/release/* --draft --verify-tag \

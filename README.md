@@ -14,16 +14,22 @@ configurations, and endpoints.
 
 ## Install
 
-**macOS (Apple Silicon):** Download the app from
-[GitHub Releases](https://github.com/xingrz/usbloom/releases) and drag it
-into Applications. If macOS blocks it from opening, run:
+Download your platform's package from
+[GitHub Releases](https://github.com/xingrz/usbloom/releases).
+
+| Platform | Package | Install |
+| --- | --- | --- |
+| macOS · Apple Silicon | DMG | Drag USBloom into Applications |
+| Windows · x64 / ARM64 | ZIP | Extract and open USBloom.exe |
+| Linux · x64 / ARM64 | tar.gz | Extract and run usbloom |
+
+If macOS blocks the app from opening:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/USBloom.app
 ```
 
-**Windows and Linux:** [Build from source](CONTRIBUTING.md#run-and-check).
-Packaged releases are currently available for macOS only.
+See [Linux requirements](docs/install-linux.md) if needed.
 
 ## License
 

@@ -9,8 +9,11 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import struct
 import subprocess
+import tarfile
 import tempfile
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_ID = "me.xingrz.usbloom"
@@ -194,14 +197,92 @@ def checksums(output):
     (output / "SHA256SUMS").write_text("".join(lines))
 
 
+def validate_binary(binary, platform, arch):
+    """Reject mislabeled binaries and Windows console-subsystem builds."""
+    machines = {"windows": {"x64": 0x8664, "arm64": 0xAA64},
+                "linux": {"x64": 62, "arm64": 183}}
+    if platform not in machines or arch not in machines[platform]:
+        raise ValueError("Unsupported package platform or architecture")
+    with binary.open("rb") as stream:
+        header = stream.read(64)
+        if platform == "linux":
+            if (len(header) != 64 or header[:6] != b"\x7fELF\x02\x01" or
+                    struct.unpack_from("<H", header, 18)[0] != machines[platform][arch] or
+                    struct.unpack_from("<H", header, 16)[0] not in (2, 3)):
+                raise ValueError("Expected a matching 64-bit Linux executable")
+        else:
+            if len(header) != 64 or header[:2] != b"MZ":
+                raise ValueError("Expected a Windows executable")
+            stream.seek(struct.unpack_from("<I", header, 60)[0])
+            pe = stream.read(96)
+            if (len(pe) != 96 or pe[:4] != b"PE\0\0" or
+                    struct.unpack_from("<H", pe, 4)[0] != machines[platform][arch] or
+                    struct.unpack_from("<H", pe, 24)[0] != 0x20B or
+                    struct.unpack_from("<H", pe, 92)[0] != 2):
+                raise ValueError("Expected a matching 64-bit Windows GUI executable")
+
+
+def portable_package(tag, output, binary, platform, arch, root=ROOT):
+    package_version = version(root)
+    validate_tag(tag, package_version)
+    validate_binary(binary, platform, arch)
+    # These files accompany the exact source archive used by the build job.
+    revision = (output / "SOURCE_REVISION").read_text().strip()
+    if revision != (root / "SOURCE_REVISION").read_text().strip():
+        raise ValueError("Binary source and release source revisions differ")
+    name = f"USBloom-{package_version}-{platform}-{arch}"
+    with tempfile.TemporaryDirectory() as temp:
+        folder = Path(temp) / name
+        folder.mkdir()
+        executable = folder / ("USBloom.exe" if platform == "windows" else "usbloom")
+        shutil.copy2(binary, executable)
+        executable.chmod(0o755)
+        for filename in ("LICENSE", "THIRD_PARTY_NOTICES.txt", "SOURCE_REVISION"):
+            shutil.copy2(output / filename, folder)
+        shutil.copy2(root / f"docs/install-{platform}.md", folder / "README.md")
+        if platform == "windows":
+            destination = output / f"{name}.zip"
+            with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
+                for path in sorted(folder.iterdir()):
+                    archive.write(path, f"{name}/{path.name}")
+        else:
+            destination = output / f"{name}.tar.gz"
+            def archive_permissions(member):
+                member.mode = 0o755 if member.isdir() or member.name == f"{name}/usbloom" else 0o644
+                member.uid = member.gid = 0
+                member.uname = member.gname = ""
+                return member
+            with tarfile.open(destination, "w:gz") as archive:
+                archive.add(folder, arcname=name, filter=archive_permissions)
+        print(destination)
+
+
+def verify_assets(tag, output):
+    package_version = version()
+    validate_tag(tag, package_version)
+    suffixes = ["macos-arm64.dmg", "source.tar.gz"]
+    suffixes += [f"{platform}-{arch}.{extension}"
+                 for platform, extension in (("windows", "zip"), ("linux", "tar.gz"))
+                 for arch in ("x64", "arm64")]
+    required = [f"USBloom-{package_version}-{suffix}" for suffix in suffixes]
+    required += ["LICENSE", "THIRD_PARTY_NOTICES.txt", "DEPENDENCIES.json", "SOURCE_REVISION"]
+    for filename in required:
+        path = output / filename
+        if not path.is_file() or path.stat().st_size == 0:
+            raise ValueError(f"Missing release asset: {filename}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["version", "check-tag", "bundle", "source", "package", "checksums"])
+    parser.add_argument("command", choices=["version", "check-tag", "bundle", "source", "package",
+                                            "portable", "verify-assets", "checksums"])
     parser.add_argument("--tag")
     parser.add_argument("--output", type=Path, default=ROOT / "dist/release")
     parser.add_argument("--binary", type=Path, default=ROOT / "target/debug/usbloom")
     parser.add_argument("--app", type=Path, default=ROOT / "dist/USBloom.app")
     parser.add_argument("--notices", type=Path)
+    parser.add_argument("--platform", choices=["windows", "linux"])
+    parser.add_argument("--arch", choices=["x64", "arm64"])
     args = parser.parse_args()
     output = args.output.resolve()
     if args.command == "version":
@@ -214,6 +295,10 @@ def main():
         source(args.tag or "", output)
     elif args.command == "package":
         package(args.tag or "", output, args.app.resolve())
+    elif args.command == "portable":
+        portable_package(args.tag or "", output, args.binary.resolve(), args.platform, args.arch)
+    elif args.command == "verify-assets":
+        verify_assets(args.tag or "", output)
     else:
         checksums(output)
 

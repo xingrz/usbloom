@@ -1,7 +1,7 @@
 # Platform validation
 
-Build support and runtime validation are separate. The first distributed
-package targets Apple Silicon macOS; Windows and Linux remain experimental.
+Build support and runtime validation are separate. Release packages target Apple Silicon macOS and x64/ARM64 Windows and
+Linux. Windows and Linux hardware support remains experimental.
 
 | Target | CI | Runtime evidence |
 | --- | --- | --- |
