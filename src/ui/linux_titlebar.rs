@@ -34,6 +34,8 @@ impl RenderOnce for HeaderBar {
             .border_b_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().background)
+            .rounded_tl(crate::linux_frame::radius(window))
+            .rounded_tr(crate::linux_frame::radius(window))
             .on_double_click(|_, window, _| window.zoom_window())
             .on_mouse_down(MouseButton::Right, |event, window, _| {
                 window.show_window_menu(event.position)

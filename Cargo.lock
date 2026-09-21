@@ -7776,6 +7776,7 @@ name = "usbloom"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "ashpd",
  "cyme",
  "futures-lite",
  "gpui-kit",

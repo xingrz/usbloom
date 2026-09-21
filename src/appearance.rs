@@ -1,8 +1,13 @@
-use gpui_kit::{App, Window, component::Theme, rgb};
+use gpui_kit::{App, Window, component::Theme, rgb, transparent_black};
 
 /// Keep native controls, Kit widgets, and device content on the same palette.
 pub fn sync(window: Option<&mut Window>, cx: &mut App) {
     Theme::sync_system_appearance(window, cx);
+    let scrollbar_mode = crate::scrollbar_theme::mode(
+        crate::scrollbar_theme::platform(),
+        cx.should_auto_hide_scrollbars(),
+        crate::scrollbar_theme::preferences(cx),
+    );
     let theme = Theme::global_mut(cx);
     let dark = theme.is_dark();
     let color = |light, dark_color| rgb(if dark { dark_color } else { light }).into();
@@ -31,8 +36,13 @@ pub fn sync(window: Option<&mut Window>, cx: &mut App) {
     theme.popover_foreground = theme.foreground;
     theme.title_bar = theme.background;
     theme.title_bar_border = theme.border;
+    theme.scrollbar_mode = scrollbar_mode;
+    theme.scrollbar = transparent_black();
+    theme.scrollbar_thumb = color(0x89958e, 0x82988b);
+    theme.scrollbar_thumb_hover = color(0x596b60, 0xb2c5b9);
     theme.warning = color(0xfff3dc, 0x3c3120);
     theme.warning_foreground = color(0x87682c, 0xe6c58b);
     Theme::sync_base(cx);
+    crate::scrollbar_theme::sync(cx);
     cx.refresh_windows();
 }

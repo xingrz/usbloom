@@ -4,6 +4,13 @@
 )]
 
 mod appearance;
+#[cfg(any(target_os = "linux", all(unix, test)))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod desktop_settings;
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod linux_frame;
+mod scrollbar_theme;
 mod ui;
 use gpui_kit::{
     component::{Root, TitleBar},
@@ -22,6 +29,8 @@ fn main() {
         .run(|cx| {
             gpui_kit::init(cx);
             appearance::sync(None, cx);
+            #[cfg(target_os = "linux")]
+            desktop_settings::observe(cx);
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
             cx.set_menus([Menu::new("USBloom").items([MenuItem::action("Quit USBloom", Quit)])]);
@@ -64,7 +73,14 @@ fn main() {
                             })
                             .detach();
                         let view = cx.new(|cx| Explorer::new(window, cx));
-                        cx.new(|cx| Root::new(view, window, cx))
+                        #[cfg(target_os = "linux")]
+                        let view = cx.new(|_| linux_frame::Frame(view.into()));
+                        cx.new(|cx| {
+                            let root = Root::new(view, window, cx);
+                            #[cfg(target_os = "linux")]
+                            let root = root.bordered(false).bg(transparent_black());
+                            root
+                        })
                     },
                 )
                 .expect("could not open USBloom");

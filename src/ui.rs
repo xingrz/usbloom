@@ -1,6 +1,7 @@
 #[cfg(target_os = "linux")]
 mod linux_titlebar;
 mod raw_data;
+mod scrollbars;
 mod values;
 #[cfg(target_os = "windows")]
 mod windows_titlebar;
@@ -37,6 +38,13 @@ use usbloom::{
 gpui_kit::actions!(usbloom, [Quit, Refresh, Find, OpenSnapshot, SaveSnapshot]);
 pub const TITLEBAR_HEIGHT: Pixels = px(if cfg!(target_os = "macos") { 64. } else { 48. });
 
+fn corner_radius(_window: &Window) -> Pixels {
+    #[cfg(target_os = "linux")]
+    return crate::linux_frame::radius(_window);
+    #[cfg(not(target_os = "linux"))]
+    px(0.)
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Interfaces,
@@ -56,6 +64,7 @@ pub struct Explorer {
     search: Entity<InputState>,
     focus: FocusHandle,
     detail_scroll: ScrollHandle,
+    tree_scroll: ScrollHandle,
     scans: ScanGate,
     watch_error: Option<String>,
     debounce: Option<Task<()>>,
@@ -94,6 +103,7 @@ impl Explorer {
             search,
             focus: cx.focus_handle(),
             detail_scroll: ScrollHandle::new(),
+            tree_scroll: ScrollHandle::new(),
             scans: ScanGate::default(),
             watch_error: None,
             debounce: None,
@@ -428,6 +438,8 @@ impl Explorer {
         TitleBar::new()
             .h(TITLEBAR_HEIGHT)
             .pl_0()
+            .rounded_tl(corner_radius(_window))
+            .rounded_tr(corner_radius(_window))
             .border_b_1()
             .border_color(cx.theme().border)
             .bg(cx.theme().background)
@@ -435,7 +447,7 @@ impl Explorer {
             .into_any_element()
     }
 
-    fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn sidebar(&self, radius: Pixels, cx: &mut Context<Self>) -> impl IntoElement {
         let query = self.search.read(cx).value().to_string();
         let visible = inventory::visible_rows(&self.rows, &query, &self.collapsed);
         let mut tree = div()
@@ -443,7 +455,9 @@ impl Explorer {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(12.))
+            .track_scroll(&self.tree_scroll)
+            .pl(px(12.))
+            .pr(px(24.))
             .pb(px(16.));
         let mut last_bus = String::new();
         for row in &visible {
@@ -594,6 +608,8 @@ impl Explorer {
             .flex()
             .flex_col()
             .bg(cx.theme().sidebar)
+            .rounded_bl(radius)
+            .pb(radius)
             .border_r_1()
             .border_color(cx.theme().border)
             .child(
@@ -604,10 +620,19 @@ impl Explorer {
                         .cleanable(true),
                 ),
             )
-            .child(tree)
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(tree)
+                    .child(scrollbars::vertical("tree-scrollbar", &self.tree_scroll)),
+            )
     }
 
-    fn detail(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn detail(&mut self, radius: Pixels, cx: &mut Context<Self>) -> AnyElement {
         let Some(row) = self
             .rows
             .iter()
@@ -909,6 +934,7 @@ impl Explorer {
         }
         div()
             .id(SharedString::from(format!("detail-{}", row.key)))
+            .relative()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
@@ -924,6 +950,14 @@ impl Explorer {
             .flex_col()
             .bg(cx.theme().background)
             .child(content)
+            .rounded_br(radius)
+            .pb(radius)
+            .when(self.tab != Tab::Raw, |view| {
+                view.child(scrollbars::vertical(
+                    "details-scrollbar",
+                    &self.detail_scroll,
+                ))
+            })
             .into_any_element()
     }
 
@@ -1182,8 +1216,10 @@ impl Explorer {
 
 impl Render for Explorer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let radius = corner_radius(window);
         div()
             .size_full()
+            .rounded(radius)
             .relative()
             .flex()
             .flex_col()
@@ -1256,8 +1292,8 @@ impl Render for Explorer {
                     .flex_1()
                     .min_h_0()
                     .flex()
-                    .child(self.sidebar(cx))
-                    .child(self.detail(cx)),
+                    .child(self.sidebar(radius, cx))
+                    .child(self.detail(radius, cx)),
             )
             .when(!self.notice.is_empty(), |view| {
                 view.child(

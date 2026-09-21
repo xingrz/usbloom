@@ -43,6 +43,11 @@ targets whose runtime support must be reported honestly.
 - Make common tasks discoverable: browse, search, refresh, copy, and save
   or open a snapshot. Explain fields where the explanation is useful.
 - Keep selection, expansion, and scrolling stable across refreshes.
+- Give scrollable panes draggable scrollbars with platform-appropriate
+  styling and desktop visibility preferences. Read Linux capabilities and
+  settings rather than selecting themes by distribution. Use a visible,
+  neutral fallback when preferences are unavailable. Keep content clear of
+  tracks and stable when a thumb appears or expands.
 - Show raw values alongside decoded meanings without overwhelming the
   initial view. Unknown and vendor-specific values must remain inspectable.
 - README.md is for users. Put development instructions in CONTRIBUTING.md
