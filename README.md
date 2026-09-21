@@ -14,6 +14,12 @@ configurations, and endpoints.
 
 ## Install
 
+On macOS (Apple Silicon), install with Homebrew:
+
+```sh
+brew install --cask xingrz/tap/usbloom
+```
+
 Download your platform's package from
 [GitHub Releases](https://github.com/xingrz/usbloom/releases).
 
